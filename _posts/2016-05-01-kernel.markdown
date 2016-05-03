@@ -1,0 +1,246 @@
+---
+layout:     post
+title:      "linux内核移植"
+subtitle:   "基于Linux2.6.39"
+date:       2016-05-01
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+
+tags:
+    - linux
+    - kernel
+    - 移植
+---
+
+在进行Linux内核模块开发，即设备驱动的开发之前，最重要的就是要在自己的开发板上移植linux kernel。我用的是S3C6410的开发板，其他型号板子和芯片的移植应该大同小异。
+
+### 环境搭建
+
+#### 安装交叉编译工具
+
+``` bash
+tar -zxvf arm-linux-gcc.tar.gz -C /
+```
+交叉编译文件为arm-linux-gcc.tar.gz，`-C`指定解压位置。
+
+#### 添加环境变量
+
+如果只是添加到当前用户环境，就在这个文件`/~/.bashrc`中添加，`~`表示工作目录，普通用户为`/home`，root用户为`/root`；
+
+如果要添加到全局环境，需要在`/etc/profile`中添加。
+
+``` bash
+export PATH=$PATH:/usr/local/arm/4.3.2/bin
+```
+其中`:`表示并列关系，比如上面也可以写成
+
+``` bash
+export PATH=/usr/local/arm/4.3.2/bin:$PATH
+```
+
+### 编译u-boot
+把通用的uboot移植到特定的开发板上还是比较麻烦的一件事，等有时间了还需要仔细的研究一下，下面用的是别人已经改写好的uboot，直接进行编译了。
+
+``` bash
+make clean
+make 6410_config
+make CROSS_COMPILE=arm-linux 
+cp mkimage /bin
+```
+
+### 编译内核
+
+#### Kconfig文件
+
+在编译内核之前了解一下Kconfig文件，配置好后保存到.config中，Makefile编译时调用。
+
+其中一个config的大体结构为
+
+``` bash
+menu "菜单名"
+config 模块
+    bool:布尔类型/tristate:三态(M内核、Y模块、N不编译)  "选项名"
+    depends on或requires  模块
+    default y/n
+endmenu
+```
+
+#### X86
+
+编译在x86上运行的内核
+
+``` bash
+make clean
+make menuconfig
+make bzImage 
+```
+成功后在终端显示
+
+> Kernel: arch/x86/boot/bzImage is ready  (#1)
+
+表示在此目录下生成bzImage文件。
+
+#### ARM
+
+编译在ARM上运行的内核
+
+``` bash
+make clean
+make menuconfig ARCH=arm
+make uImage ARCH=arm CROSS_COMPILE=arm-linux-
+```
+
+如果要内核nfs启动，在运行make menuconfig之前需要把`.config`文件配置成支持nfs启动，添加
+
+> CONFIG_CMDLINE="root=/dev/nfs nfsroot=192.168.0.1:/nfsroot ip=192.168.0.2 rw console=ttySAC0 mem=64M"
+
+其中`root=/dev/nfs`表示nfs方式启动，`192.168.0.1`为nfs服务器ip，`192.168.0.2`为开发板ip。
+
+
+这时终端显示结果为：
+
+> "mkimage" command **not found** - U-Boot images will not be built
+> Image arch/arm/boot/uImage is ready
+
+然后执行
+
+``` bash
+cp mkimage /bin
+```
+再次编译即可
+
+### 制作文件系统
+
+#### 建立必要文件
+
+主要是建立一些目录，如果需要nfs启动根文件系统的话，还要加入启动文件。
+
+``` bash
+mkdir /nfsroot
+mkdir bin dev etc lib proc sbin sys usr mnt tmp var
+mkdir usr/bin usr/lib usr/sbin lib/modules
+tar zxvf etc.tar.gz -C /nfsroot/
+```
+其中`etc.tar.gz`为nfs启动文件，`/nfsroot`不仅是内核模块，也为nfs共享目录，以便根文件系统通过nfs启动。
+
+#### 编译内核模块
+在内核目录下执行
+
+``` bash
+make modules ARCH=arm CROSS_COMPILE=arm-linux-
+make modules_install ARCH=arm INSTALL_MOD_PATH=/nfsroot
+```
+
+#### 安装busybox
+在busybox目录下，配置busybox，然后编译、安装。
+
+``` bash
+make menuconfig
+make ARCH=arm CROSS_COMPILE=arm-linux-
+make install
+```
+
+执行
+
+``` bash
+ls /nfsroot/bin
+```
+如果安装成功，可以看到此目录下安装好的一些命令。
+
+
+### 开发板下载
+将编译好的uboot文件，zImage内核，cramfs根文件系统下载到开发板中。由于cramfs文件只读，需要使用的yaffs文件可以直接下载，也可以通过nfs挂载，开发时更便捷。
+
+#### 开发板配置
+设置开发板和电脑主机的ip
+
+``` bash
+setenv serverip 192.168.0.1
+setenv ipaddr 192.168.0.2
+```
+
+然后设置nfs启动，如果在编译内核是配置过，就不需要在这里设置了。
+
+``` bash
+setenv bootargs"root=/dev/nfs nfsroot=192.168.0.1:/nfsroot ip=192.168.0.2 console=ttySAC0,115200"
+```
+`
+最后记得保存
+
+``` bash
+saveenv
+```
+
+#### 下载内核
+首先下载uboot文件
+
+``` bash
+tftp c0008000 u-boot.bin
+nand erase 0 40000
+nand write c0008000 0 40000
+```
+
+下载内核
+
+``` bash
+tftp c0008000 zImage
+nand erase 40000 200000
+nand write c0008000 40000 200000
+```
+
+#### 下载文件系统
+
+首先需要下载cramfs根文件系统
+
+``` bash
+tftp c0008000 rootfs_up6410.cramfs
+nand erase 300000 f00000
+nand write c0008000 300000 f00000
+```
+
+用户文件即yaffs文件系统，可以通过FlashFXP传送到开发板的`/tmp/`目录下，此目录掉电后文件自动删除，然后再xshell中运行
+
+``` bash
+tar jxvf /tmp/yaffs.tar.bz2 -C /mnt/yaffs/
+```
+
+如果是在开发阶段，不需要像上面那样把整个文件系统拷贝到开发板上，把需要运行的程序放在主机上的nfs共享文件夹中，下面的例子直接用的是主机上的编译好文件系统的目录`/nfsroot`，然后开发板上运行挂载命令，在开发板的`/mnt/nfs`目录中就能看到应用程序。
+
+``` bash
+mount -t nfs 192.168.0.1:/nfsroot /mnt/nfs
+```
+
+### 其他配置
+还有两个很重要的配置，`nfs`可以理解为用来实现开发板和电脑共享文件，`samba`则为实现电脑上windows和linux之间的共享。
+
+#### nfs挂载文件系统
+
+修改`/etc/exports`文件
+
+``` bash
+/nfsroot 192.168.0.*(rw,sync,no_root_squash)
+```
+
+重启nfs即可
+
+``` bash
+/etc/init.d/nfs-kernel-server restart 
+```
+
+在xshell中运行
+
+``` bash
+tftp 31000000 uImage
+bootm 31000000
+```
+
+其中`uImage`是前面编译的能直接通过nfs启动文件系统的内核，第二条命令重启之后开发板自动挂载nfs文件系统。
+
+#### samba服务器
+
+直接编辑`smb.conf`这个文件即可，加入一些配置参数，在Ubuntu中还需要在共享的文件夹右键，然后设置共享。
+
+``` bash
+vim /etc/samba/smb.conf
+```
