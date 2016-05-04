@@ -1,0 +1,28 @@
+---
+layout:     post
+title:      "内核中的IO访问"
+subtitle:   "另外包含一些其他问题"
+date:       2016-05-03
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - linux
+    - IO
+---
+
+### 地址映射
+
+
+
+### 内存设备
+
+
+
+### 端口设备
+
+
+
+
+### 定义命令
+

@@ -1,0 +1,45 @@
+---
+layout:     post
+title:      "Linux设备驱动（二）"
+subtitle:   "设备驱动模型"
+date:       2016-05-03
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - linux
+    - device
+    - driver
+---
+
+
+### kobject
+
+#### kset结构
+
+#### kobject结构
+
+#### 具体操作
+
+
+### 总线设备
+
+
+#### 总线结构
+
+#### 设备结构
+
+#### 设备驱动结构
+
+#### 具体操作 
+
+
+
+### 平台设备 
+
+#### 平台设备结构
+
+#### 平台设备驱动结构
+
+#### 具体操作
+

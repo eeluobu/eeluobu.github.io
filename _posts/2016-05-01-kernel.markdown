@@ -1,6 +1,6 @@
 ---
 layout:     post
-title:      "linux内核移植"
+title:      "Linux内核移植"
 subtitle:   "基于Linux2.6.39"
 date:       2016-05-01
 author:     "luobu"
@@ -9,6 +9,7 @@ catalog:    true
 
 tags:
     - linux
+    - 嵌入式
     - kernel
     - 移植
 ---
