@@ -1,0 +1,65 @@
+---
+layout:     post
+title:      "Linux设备驱动模型（三）"
+subtitle:   "platform设备驱动模型"
+date:       2016-05-03
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - linux
+    - device
+    - driver
+---
+
+前面说了字符设备和misc设备模型，是linux设备驱动的基础，几乎很多模型都是基于此构建的。
+
+> 模型隐藏在交互背后，与设备模型直接交互的通常由总线级逻辑和其他内核子系统来处理。其结果是，许多驱动程序的作者可以完全忽略设备模型，并相信设备模型能处理好它所负责的事情。
+
+
+
+### 平台设备 
+
+
+
+#### 平台设备结构
+
+``` c
+struct platform_device {
+    const char	* name;
+    int		id;
+    struct device	dev;
+    u32		num_resources;
+    struct resource	* resource;
+    const struct platform_device_id	*id_entry;
+
+	/* MFD cell pointer */
+	struct mfd_cell *mfd_cell;
+
+	/* arch specific additions */
+	struct pdev_archdata	archdata;
+};
+```
+int platform_device_register(struct platform_device *);
+void platform_device_unregister(struct platform_device *);
+
+#### 平台设备驱动结构
+
+
+``` c
+struct platform_driver {
+	int (*probe)(struct platform_device *);
+	int (*remove)(struct platform_device *);
+	void (*shutdown)(struct platform_device *);
+	int (*suspend)(struct platform_device *, pm_message_t state);
+	int (*resume)(struct platform_device *);
+	struct device_driver driver;
+	const struct platform_device_id *id_table;
+};
+```
+
+int platform_driver_register(struct platform_driver *);
+void platform_driver_unregister(struct platform_driver *);
+
+#### 具体操作
+

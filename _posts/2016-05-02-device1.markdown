@@ -1,7 +1,7 @@
 ---
 layout:     post
-title:      "Linux设备驱动（一）"
-subtitle:   "设备驱动模型"
+title:      "Linux设备驱动模型（一）"
+subtitle:   "字符和misc设备驱动模型"
 date:       2016-05-02
 author:     "luobu"
 header-img: "img/post.jpg"
