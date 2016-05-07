@@ -1,7 +1,7 @@
 ---
 layout:     post
 title:      "内核中的IO访问"
-subtitle:   "另外包含一些其他问题"
+subtitle:   "另外包含驱动中的一些其他问题"
 date:       2016-05-03
 author:     "luobu"
 header-img: "img/post.jpg"
@@ -9,23 +9,212 @@ catalog:    true
 tags:
     - linux
     - IO
+    - 中断
 ---
+
+前面介绍的都是一些设备模型，没有具体到内核驱动的细节部分，比如访问硬件时要进行地址映射，定义ioctl的命令，驱动中的中断等。
 
 ### 地址映射
 
+简单来说，在Linux内核中，程序不能直接访问物理地址空间，只能通过访问虚拟地址的方式，间接的访问硬件或者寄存器的物理地址。因此需要有地址映射函数，来进行物理地址和虚拟地址之间的转换。
 
+#### ioremap
 
-### 内存设备
+由物理地址到虚拟地址的映射常用的`ioremap`来实现，宏定义如下
 
+``` c
+#define ioremap(cookie,size)  __arch_ioremap((cookie), (size), MT_DEVICE)
+```
+其中`cookie`表示物理地址，`size`表示映射区域的长度，整个ioremap的值即`__arch_ioremap`的返回值是映射好的虚拟地址。
 
+#### __arch_ioremap
 
-### 端口设备
+下面是在arm处理器下__arch_ioremap的地址映射实现
 
+``` c
+static inline void __iomem *__arch_ioremap(unsigned long paddr, size_t size, unsigned int mtype)
+{
+    void __iomem *retval;
+    unsigned long offs = paddr - ORION5X_REGS_PHYS_BASE;
+    if (mtype == MT_DEVICE && size && offs < ORION5X_REGS_SIZE && size <= ORION5X_REGS_SIZE && offs + size <= ORION5X_REGS_SIZE)
+        retval = (void __iomem *)ORION5X_REGS_VIRT_BASE + offs;
+    else
+        retval = __arm_ioremap(paddr, size, mtype);
+    return retval;
+}
+```
+可以看到最终调用了`__arm_ioremap`函数。
 
+#### iounmap
 
+iounmap用来取消对物理地址的映射，宏定义如下：
+
+``` c
+#define iounmap  __arch_iounmap
+```
+
+### IO内存访问
+
+#### 区别
+
+刚开始老搞不懂IO内存和端口访问的区别，其实他们最根本的区别就是两句话。
+
+**IO端口**：设备把寄存器映射到`IO端口`；
+
+**IO内存**：设备把寄存器映射到`内存地址区段`；
+
+#### 访问流程
+
+#### request_mem_region
+
+首先需要通过`request_mem_region`
+来申请需要映射的物理地址空间，宏定义如下
+
+``` c
+#define request_mem_region(start,n,name) __request_region(&iomem_resource, (start), (n), (name), 0)
+struct resource *request_mem_region(u32 start, u32 len, char *name);
+```
+`start`是要映射的开始的物理地址；`n`是要映射的地址长度，可以用`end-start+1`来计算。
+
+然后通过ioremap映射，程序就可以访问这个区域的地址了。
+
+#### 内存读写
+
+8位读函数u8 ioread8(void *addr)，其中`addr`为要读的虚拟地址，返回一个8位的数值。
+
+``` c
+#define ioread8(p) ({ unsigned int __v = __raw_readb(p); __iormb(); __v; })
+```
+8位写函数void iowrite8(u8 value, void *addr)，其中`addr`为要写入的虚拟地址，`value`为一个8位的要写入的值。
+
+``` c
+#define iowrite8(v,p) ({ __iowmb(); (void)__raw_writeb(v, p); })
+```
+16、32位的读写同理。
+
+#### 释放内存
+
+读写完成之后，记得要用iounmap取消映射，然后再运行释放内存函数。
+
+**release_mem_region**
+
+``` c
+#define release_region(start,n)	__release_region(&ioport_resource, (start), (n))
+```
+参数和request_mem_region相同。
+
+### IO端口访问
+
+IO端口访问，即设备把寄存器映射到`IO端口`上了，需要通过对端口的读写来操作设备。
+
+#### 访问流程
+
+#### request_region
+
+向内核申请需要访问的端口，`start`为开始的端口号，`n`为端口数量。
+
+``` c
+#define request_region(start,n,name) __request_region(&ioport_resource, (start), (n), (name), 0)
+struct resource *request_region(u32 start, u32 len, char *name);
+```
+
+#### 端口读写
+从`port`端口读8位数据：
+
+``` c
+u8 inb(u16 port);
+```
+向`port`端口写入8位数据`v`：
+
+``` c
+void outb(u8 v, u16 port);
+```
+从`port`端口读`count`个8位数据到`addr`地址：
+
+``` c
+void insb(u16 port, void *addr, u32 count);
+```
+从`addr`地址向`port`端口写入`count`个8位数据：
+
+``` c
+void outsb(u16 port, void *addr, u32 count);
+```
+
+其他16、32位的读写，如inw、outw、insl、outsl等同理。
+
+#### release_region
+
+对端口读写完成后，要运行release_region释放端口，参数同request_region。
+
+``` c
+#define release_region(start,n)	__release_region(&ioport_resource, (start), (n))
+void release_region(u32 start, u32 len);
+```
 
 ### 定义命令
+命令实质而言就是一个整数，但为了让这个整数具备更好的可读性，我们通常会把这个整数分为几个段：**类型**、**序号**、**参数传送方向**、**参数长度**，即type、number、direction、size。其中类型为8位的unsigned int。
+
+说这么多，直接看实例可能更清楚一些
+
+#### 定义幻数/类型
+
+``` c
+#define GPIO_IOCTL_MAGIC 'G'
+```
+
+#### 定义命令
+
+``` c
+#define LED0 _IOW(GPIO_IOCTL_MAGIC, 0, unsigned int)
+```
+其中`LED0`表示定义的一个命令，`_IOW`含义为这是向设备写入命令（**参数传送方向**），`GPIO_IOCTL_MAGIC`为前面定义的幻数（**类型**），`0`表示命令**序号**，`unsigned int`表示**参数长度**。
+
+除了上面的_IOW向设备写入参数的命令，还有
+
+``` c
+_IO(type,nr)            //不带参数的命令；
+_IOR(type,nr,datatype)  //从设备中读参数的命令。
+```
 
 ### 中断
 
-在open函数中，合理
+中断在程序中的重要性不言而喻，在内核驱动程序中也是同样。
+
+#### 中断请求
+
+中断请求函数`request_irq`，在注册设备时，这个函数通常在`open`函数中打开，而不放在`probe`函数中打开。这样是为了在程序需要时才注册中断，而不是驱动一加载就注册中断。
+
+``` c
+int request_irq(unsigned int irq,
+                irq_handler_t handler,
+                unsigned long flags,
+                const char *name,
+                void *dev);
+```
+`irq`为要申请的中断号；`handler`为中断处理函数指针；`flag`位可以为SA_INTERRUPT（快速中断）、SA_SHIRQ（中断共享）、SA_SAMPLE_RANDOM（随机中断）；`*name`为中断名，在/proc/interrupts目录中显示；`*dev`共享的中断信号线。
+
+#### irq_handler_t
+
+``` c
+typedef enum {
+	IRQ_NONE,
+	IRQ_HANDLED
+} irqreturn_t;
+
+typedef irqreturn_t (*irq_handler_t)(int, void *);
+```
+
+### proc文件系统
+
+proc文件系统是一种在用户态下检查内核状态的机制。
+
+proc目录下有很多子目录和文件，每个目录和文件都是动态创建的，并不存在于磁盘上。
+
+命令`cat /proc/kallsys`查看内核导出了哪些符号；
+
+命令`cat /proc/cpuinfo`可以查看CPU的信息；
+
+命令`cat /proc/interrupts`查看中断使用情况；
+
+等等.....
+
