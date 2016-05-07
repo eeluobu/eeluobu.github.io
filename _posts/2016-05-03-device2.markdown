@@ -21,7 +21,7 @@ tags:
 kobject作为一个设备模型的基本结构，被嵌入到好多其他模型结构中。kset可以看成是kobject的集合，在同一个kset集合中，kobject通过其中的`*parent`指向kset中的kobject。
 
 #### kobject结构
-上一篇介绍的字符设备描述结构cdev中，就包含kobject，如果有cdev结构得到kobject很简单，一个`->`就行了。但是想反过来，由kobject得到cdev，就需要用到`container_of`这个宏了，这个宏比较常用的是在open这函数中。
+上一篇介绍的字符设备描述结构cdev中，就包含有kobject，如果有cdev结构得到kobject很简单，一个`->`就行了。但是如果想反过来，由kobject得到cdev，就需要用到`container_of`这个宏了，这个宏比较常用的是在open这函数中。
 
 ``` c
 struct kobject *kp;
@@ -60,7 +60,7 @@ struct kobj_type {
 ```
 常用的有`release`方法，`**default_attrs`属性列表，用于创建该类型的每一个kobject，`*sysfs_ops`提供了实现这些属性的方法。
 
-**struct attribute**
+##### struct attribute
 
 ``` c
 struct attribute {
@@ -70,7 +70,7 @@ struct attribute {
 ```
 name为属性的名字，在`/sys/`下显示。mode通常为`S_IRUGO`读属性，如果可写使用`S_IWUSR`。
 
-**struct sysfs_ops**
+##### struct sysfs_ops
 
 ``` c
 struct sysfs_ops {
@@ -97,13 +97,14 @@ struct kset {
 
 ##### 模块init函数
 
-**kest注册**
+##### kest注册
 
 ``` c
 void kset_init(struct kset *kset);
 int __must_check kset_register(struct kset *kset);
 ```
-**kobject注册**
+
+##### kobject注册
 
 ``` c
 int kobject_init_and_add(struct kobject *kobj,
@@ -123,7 +124,7 @@ name为属性名，创建好后，在`/sys/`下显示为一个目录。
 
 ##### 模块exit函数
 
-**kset和kobject的注销**
+#####  kset和kobject的注销
 
 ``` c
 void kobject_del(struct kobject *kobj);
@@ -160,7 +161,7 @@ struct bus_type {
 ```
 name为总线的类型名称，即bus/目录下的目录名。比较重要的总线方法有`match`，是一个匹配函数，当一个总线上添加新的设备或者驱动时，调用这个函数。来看一下总线属性：
 
-**bus_attribute**
+##### bus_attribute
 
 ``` c
 struct bus_attribute {
@@ -172,7 +173,7 @@ struct bus_attribute {
 其中的struct attribute，show和store在前面都已经介绍过了。
 
 
-**具体操作**
+##### 具体操作
 
 ``` c
 int __must_check bus_register(struct bus_type *bus);
@@ -222,9 +223,9 @@ struct device {
     const struct attribute_group **groups;
 };
 ```
-突然发现这个量有点大，ldd3中说在注册device结构之前，至少要设置`parent`、`bus_id`、`bus`和`release`成员。在上面的代码中找了好几遍，其他三个都找到了，就是没找到`bus_id`。上网查了一下才发现，现在的内核版本里已经改成了`*init_name`，同时可以通过dev_set_name()函数来设置名称。
+突然发现这个量有点大，ldd3中说在注册device结构之前，至少要设置`parent`、`bus_id`、`bus`和`release`成员。在上面的代码中找了好几遍，其他三个都找到了，就是没找到`bus_id`。上网查了一下才发现，ldd3的内核版本是Linux 2.6.10，而现在的内核版本里已经改成了`*init_name`，同时可以通过dev_set_name()函数来设置名称。
 
-**attribute_group**
+##### attribute_group
 
 ``` c
 struct attribute_group {
@@ -234,7 +235,7 @@ struct attribute_group {
 };
 ```
 
-**device_attribute**
+##### device_attribute
 
 ``` c
 struct device_attribute {
@@ -245,7 +246,7 @@ struct device_attribute {
 ```
 感觉和bus_attribute大同小异。
 
-**具体操作**
+##### 具体操作
 
 ``` c
 int __must_check device_register(struct device *dev);
@@ -279,9 +280,9 @@ struct device_driver {
 ```
 `*name`为驱动名，`*bus`为驱动所属的总线。
 
-Linux 2.6.39中的内核和ldd3中的介绍的内核，在这一块还是有很大区别的。比如说在struct device和struct device_driver中又增加了好多新的元素，也是搞的我云里雾里的，今后还要多读读新内核才是。
+Linux 2.6.39中的内核和ldd3中的介绍的Linux 2.6.10内核，在这一块还是有很大区别的。比如说在struct device和struct device_driver中又增加了好多新的元素，也是搞的我云里雾里的，今后还要多读读新内核才是。
 
-**具体操作**
+##### 具体操作
 
 ``` c
 int __must_check driver_register(struct device_driver *drv);
