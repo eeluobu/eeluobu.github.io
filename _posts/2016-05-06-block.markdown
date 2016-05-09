@@ -1,0 +1,175 @@
+---
+layout:     post
+title:      "块设备驱动程序"
+subtitle:   "基于ramdisk设备"
+date:       2016-05-06
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - linux
+    - block
+    - 块设备
+---
+
+前面讲的驱动基本上都是基于字符设备的，对字符设备的定义是：一个顺序的数据流设备，对其的读写是按字符连续进行的。由于不具备缓冲区，对它的读写是实时的。
+
+作为三大基本设备类型之一，现在来看看块设备：一种具有一定结构的`随机存取设备`，对这种设备的读写是`按块进行`的，使用`缓冲区`来存放暂时的数据，达到条件后，从缓存一次性写入设备或者从设备一次性读到缓冲区。
+
+### 块设备
+
+#### 结构
+
+block_device:  描述一个分区或整个磁盘对内核的一个块设备实例 
+
+gendisk:       描述一个通用硬盘（generic hard disk）对象。
+
+hd_struct:     描述分区应有的分区信息 
+
+bio:           描述块数据传送时怎样完成填充或读取块给driver
+
+request:       描述向内核请求一个列表准备做队列处理。 
+
+request_queue: 描述内核申请request资源建立请求链表并填写BIO形成队列。
+
+#### 初始化
+
+
+
+### 有请求队列
+
+#### 块设备数据传输
+
+``` c
+void blk_transfer(unsigned long sector, unsigned long nsect, char *buffer, int write);
+```
+
+#### 块设备请求处理函数
+
+
+``` c
+ void blk_request_func(struct request_queue *q);
+```
+
+### 无请求队列
+
+
+#### 绑定请求队列
+
+``` c
+void blk_queue_make_request(request_queue_t * q, make_request_fn * mfn);
+```
+
+#### 制造请求
+
+``` c
+void blk_queue_hardsect_size(request_queue_t *queue, unsigned short max); 
+````
+
+### 实例
+
+#### 块设备函数
+
+**blk_transfer**
+
+块设备数据传输
+
+``` c
+static void blk_transfer(unsigned long sector, unsigned long nsect, char *buffer, int write)  
+{  
+    int read = !write;  
+    if(read)  
+    {  
+        memcpy(buffer, flash+sector*512, nsect*512);  
+    }  
+    else  
+    {  
+        memcpy(flash+sector*512, buffer, nsect*512);  
+    }  
+}
+```
+
+
+**blk_request**
+
+块设备请求处理函数
+
+``` c
+static void blk_request(struct request_queue *q)  
+{
+    struct request *req;  
+    while((req = elv_next_request(q)) != NULL)    
+    {  
+        if(!blk_fs_request(req))  
+        {  
+            end_request(req, 0);  
+            continue;  
+        }  
+          
+        blk_transfer(req->sector, req->current_nr_sectors, req->buffer, rq_data_dir(req));  
+        /*rq_data_dir从request获得数据传送的方向*/  
+        /*req->current_nr_sectors 在当前段中将完成的扇区数*/  
+        /*req->sector 将提交的下一个扇区*/  
+        end_request(req, 1);  
+    }  
+} 
+```
+
+#### 实现operations
+
+``` c
+/*strcut block_device_operations*/  
+static  int blk_ioctl(struct block_device *dev, fmode_t no, unsigned cmd, unsigned long arg)  
+{
+    return -ENOTTY;  
+}  
+  
+static int blk_open (struct block_device *dev , fmode_t no)  
+{
+    printk("blk mount succeed\n");  
+    return 0;  
+}  
+static int blk_release(struct gendisk *gd , fmode_t no)  
+{  
+    printk("blk umount succeed\n");  
+    return 0;  
+}  
+struct block_device_operations blk_ops=  
+{  
+    .owner = THIS_MODULE,  
+    .open = blk_open,  
+    .release = blk_release,  
+    .ioctl = blk_ioctl,  
+};  
+```
+
+
+
+#### 模块init
+
+``` c
+    register_blkdev(BLK_MAJOR, blk_dev_name);
+
+    gd = alloc_disk(1);  //分配一个gendisk，分区是一个  
+    spin_lock_init(&lock); //初始化一个自旋锁  
+    gd->major = major;  
+    gd->first_minor = 0;   //第一个次设备号  
+    gd->fops = &blk_ops;   //关联操作函数  
+  
+    gd->queue = blk_init_queue(blk_request_func, &lock); //初始化请求队列并关联到gendisk  
+  
+    snprintf(gd->disk_name, 32, "blk%c", 'a');    
+    blk_queue_hardsect_size(gd->queue, 512);  //设置扇区大小512字节  
+    set_capacity(gd, 32);  //设置块设备大小 512*32=16K  
+    add_disk(gd);  
+    
+```
+
+#### 模块exit
+
+``` c
+    blk_cleanup_queue(gd->queue);  
+    del_gendisk(gd);   
+    unregister_blkdev(BLK_MAJOR, blk_dev_name);  
+    printk("block module exit succeed!\n");  
+```
