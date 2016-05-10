@@ -1,7 +1,7 @@
 ---
 layout:     post
 title:      "块设备驱动程序"
-subtitle:   "基于ramdisk设备"
+subtitle:   "基于虚拟磁盘设备"
 date:       2016-05-06
 author:     "luobu"
 header-img: "img/post.jpg"
@@ -18,55 +18,213 @@ tags:
 
 ### 块设备
 
-#### 结构
+#### 相关结构
 
-block_device:  描述一个分区或整个磁盘对内核的一个块设备实例 
+##### block_device
 
-gendisk:       描述一个通用硬盘（generic hard disk）对象。
+block_device结构描述一个块设备实例，如一个分区或整个磁盘。如果该结构代表一个分区，则其成员`*bd_part`指向设备的分区结构。如果该结构代表设备，则其成员`*bd_disk`指向设备的通用硬盘结构`gendisk`。
 
-hd_struct:     描述分区应有的分区信息 
 
-bio:           描述块数据传送时怎样完成填充或读取块给driver
+``` c
+struct block_device {
+    dev_t bd_dev;  /* not a kdev_t - it's a search key */
+    int bd_openers;
+    struct inode *bd_inode; /* will die */
+    struct super_block *bd_super;
+    struct mutex bd_mutex; /* open/close mutex */
+    struct list_head bd_inodes;
+    void *bd_claiming;
+    void *bd_holder;
+    int bd_holders;
+    bool bd_write_holder;
+#ifdef CONFIG_SYSFS
+	struct list_head bd_holder_disks;
+#endif
+    struct block_device *bd_contains;
+    unsigned bd_block_size;
+    struct hd_struct *bd_part;
+    
+    unsigned bd_part_count;/* 设备打开次数 */
+    int bd_invalidated;
+    struct gendisk *bd_disk;
+    struct list_head bd_list;
+    
+    unsigned long bd_private;
+    
+    /* The counter of freeze processes */
+    int bd_fsfreeze_count;
+    
+    /* Mutex for freeze */
+    struct mutex bd_fsfreeze_mutex;
+};
+```
 
-request:       描述向内核请求一个列表准备做队列处理。 
+##### gendisk
 
-request_queue: 描述内核申请request资源建立请求链表并填写BIO形成队列。
+gendisk结构描述一个通用硬盘（generic hard disk）对象，它存储了一个硬盘的信息，包括请求队列、分区链表和块设备操作函数集等。
 
-#### 初始化
+``` c
+struct gendisk {
+    int major; /* 驱动主设备号 */
+    int first_minor;
+    int minors; /* 次设备号的数量, 没有分区为1 */
+    
+    char disk_name[DISK_NAME_LEN];	/* 主设备号驱动名 */
+    char *(*devnode)(struct gendisk *gd, mode_t *mode);
+    
+    unsigned int events;		/* 支持的事件 */
+    unsigned int async_events;	/* 异步事件 */
+    
+    struct disk_part_tbl __rcu *part_tbl;
+    struct hd_struct part0;
+    
+    const struct block_device_operations *fops;
+    struct request_queue *queue;
+    void *private_data;
+    
+    int flags;
+    struct device *driverfs_dev;  // FIXME: remove
+    struct kobject *slave_dir;
+    
+    struct timer_rand_state *random;
+    atomic_t sync_io;		/* RAID */
+    struct disk_events *ev;
+#ifdef CONFIG_BLK_DEV_INTEGRITY
+    struct blk_integrity *integrity;
+#endif
+    int node_id;
+};
+```
+**对gendisk结构的一些操作函数**
 
+
+``` c
+struct gendisk *alloc_disk(int minors);
+```
+分配gendisk，参数 `minors` 是这个磁盘使用的次设备号的数量，即分区数量。
+
+``` c
+void add_disk(struct gendisk *gd);
+```
+gendisk结构体被分配之后，系统还不能使用这个磁盘，需要调用如下函数来注册这个磁盘设备。要注意的是对add_disk()的调用必须发生在驱动程序的初始化工作完成并能响应磁盘的请求之后。
+
+``` c
+void del_gendisk(struct gendisk *gd);
+```
+释放gendisk，当不再需要一个磁盘时，应当使用如下函数释放gendisk。
+
+``` c
+void set_capacity(struct gendisk *disk, sector_t size);
+```
+设置gendisk容量。
+
+
+
+##### bio
+
+struct bio结构描述块数据传送时，怎样完成`填充或读取块`给驱动程序。bio 是通用层的主要数据结构，既描述了`磁盘的位置`，又描述了`内存的位置`，是上层内核vfs与下层驱动的连接纽带。
+
+``` c
+struct bio {
+    sector_t bi_sector;  /* 在512字节扇区的设备地址 */
+    struct bio *bi_next; /* 请求链表，指向链表中下一个bio结构 */
+    struct block_device *bi_bdev;
+    unsigned long bi_flags; /* 状态，命令标志 */
+    unsigned long bi_rw;    /* 读写位 */
+    
+    unsigned short bi_vcnt; /* bio_vec's个数 */
+    unsigned short bi_idx;  /* bvl_vec的当前索引 */
+    
+    /* 物理地址合并完成后，segments的数量在这个BIO结构中 */
+    unsigned int bi_phys_segments;
+    unsigned int bi_size; /* 重映射后 I/O 数 */
+
+    unsigned int bi_seg_front_size;
+    unsigned int bi_seg_back_size;
+    unsigned int bi_max_vecs; /* bvl_vecs最大数量 */
+    unsigned int bi_comp_cpu; 
+    atomic_t bi_cnt; 
+    struct bio_vec *bi_io_vec; 
+    bio_end_io_t *bi_end_io;
+    void *bi_private;
+    bio_destructor_t *bi_destructor; /* 销毁方法 */
+
+    struct bio_vec bi_inline_vecs[0];
+};
+```
+
+##### request
+
+request结构代表了挂起的I/O请求，每个请求用一个request结构实例描述，存放在`request_queue`链表中，由电梯算法进行排序，每个请求包含1个或多个bio结构实例。
+
+``` c
+struct request {
+    struct list_head queuelist;
+    struct call_single_data csd;
+    
+    struct request_queue *q;
+    
+    unsigned int cmd_flags;
+    enum rq_cmd_type_bits cmd_type;
+    unsigned long atomic_flags;
+    
+    int cpu;
+    unsigned int __data_len;	/* total data len */
+    sector_t __sector;		/* sector cursor */
+    
+    struct bio *bio;
+    struct bio *biotail;
+    
+    struct hlist_node hash;	/* merge hash */
+    
+    
+    union {
+        struct rb_node rb_node;	/* sort/lookup */
+        void *completion_data;
+        };
+
+    union {
+        void *elevator_private[3];
+        struct {
+            unsigned int		seq;
+            struct list_head	list;
+            } 
+        flush;
+        };
+/*省略了一部分参数*/
+/*........*/
+
+
+};
+```
+
+
+##### request_queue
+
+request_queue机构描述内核申请request资源建立请求链表并填写BIO形成队列。
+
+每个块设备都有一个请求队列，每个请求队列单独执行I/O调度，请求队列是由`request`结构实例链接成的双向链表。它存放了关于挂起请求的信息以及管理请求队列（如：电梯算法）所需要的信息。成员`request_fn`是来自设备驱动程序的请求处理函数。
+
+
+
+此外还有hd_struct结构用来描述分区中的分区信息。
+
+以及代表一个内存数据段的结构bio_vec：
+
+``` c
+struct bio_vec {
+    struct page     *bv_page;   /*数据段所在的页*/
+    unsigned short  bv_len;     /*数据段的长度*/
+    unsigned short  bv_offset;  /*数据段页内偏移*/
+};
+```
 
 
 ### 有请求队列
 
-#### 块设备数据传输
+ldd3的例程里面介绍了三种块设备的模式，分别是：有请求队列不使用bio结构的模式；有请求队列使用bio结构的模式；不使用请求队列模式。
 
-``` c
-void blk_transfer(unsigned long sector, unsigned long nsect, char *buffer, int write);
-```
-
-#### 块设备请求处理函数
-
-
-``` c
- void blk_request_func(struct request_queue *q);
-```
-
-### 无请求队列
-
-
-#### 绑定请求队列
-
-``` c
-void blk_queue_make_request(request_queue_t * q, make_request_fn * mfn);
-```
-
-#### 制造请求
-
-``` c
-void blk_queue_hardsect_size(request_queue_t *queue, unsigned short max); 
-````
-
-### 实例
+由于使用请求队列，前两种模式在模块init时基本都是一样的。对于是否使用bio结构，差别就是在驱动程序中的IO处理函数的不同，即请求函数中调用的IO处理函数`blk_transfer`。下面是比较简单的，不使用bio结构的驱动程序。
 
 #### 块设备函数
 
@@ -173,3 +331,133 @@ struct block_device_operations blk_ops=
     unregister_blkdev(BLK_MAJOR, blk_dev_name);  
     printk("block module exit succeed!\n");  
 ```
+
+
+### 无请求队列
+
+
+许多面向块的设备，例如闪存阵列，用于数字相机的存储卡，或者RAM盘，它们真正地有随机存取的性能，能够从高级的请求队列处理中提升性能。
+
+但是其他设备，例如软件RAID阵列或者被创建的虚拟磁盘，它们没有块设备处理的请求队列能够优化的性能特征。对于这类设备，最好直接从块层接收请求，而不必要去麻烦使用请求队列。
+
+
+
+#### 制造请求函数
+
+对于无队列的模式，驱动程序必须提供一个"制作请求"函数，而不是一个请求函数。
+
+
+``` c
+static int disk_make_request(struct request_queue *q,struct bio *bio)  
+{
+    int i;  
+    char *mem_pbuf;  
+    char *disk_pbuf;  
+    disk_dev *pdevice;  
+    struct bio_vec *pbvec;  
+   /*在遍历段之前先判断要传输数据的总长度大小是否超过范围*/  
+    i=bio->bi_sector*DISK_SECTOR_SIZE+bio->bi_size;
+    if(i>DISK_SIZE)//判断是否超出范围  
+        goto fail;  
+    
+    pdevice=(disk_dev*)bio->bi_bdev->bd_disk->private_data;//得到设备结构体  
+    disk_pbuf=pdevice->data+bio->bi_sector*DISK_SECTOR_SIZE;//得到要读写的起始位置  
+         
+  /*开始遍历这个bio中的每个bio_vec*/  
+    bio_for_each_segment(pbvec,bio,i)//循环分散的内存segment  
+    {
+        mem_pbuf=kmap(pbvec->bv_page)+pbvec->bv_offset;//获得实际内存地址  
+        switch(bio_data_dir(bio))  
+        {//读写  
+            case READA:  
+            case READ:  
+                memcpy(mem_pbuf,disk_pbuf,pbvec->bv_len);  
+                break;  
+            case WRITE:  
+                memcpy(disk_pbuf,mem_pbuf,pbvec->bv_len);  
+                break;  
+            default:  
+                kunmap(pbvec->bv_page);  
+                goto fail;
+        }  
+        kunmap(pbvec->bv_page);//清除映射  
+        disk_pbuf+=pbvec->bv_len;  
+    }  
+    bio_endio(bio,0);//这个函数2.6.25和2.6.4是不一样的，  
+    return 0;  
+    fail:  
+        bio_io_error(bio);//这个函数2.6.25和2.6.4是不一样的，  
+        return 0;  
+}
+```
+
+下面是设备结构体的定义，以及block_device_operations结构体的实现等函数。
+
+``` c
+typedef struct//设备结构体  
+{  
+    unsigned char *data;  
+    struct request_queue *queue;  
+    struct gendisk *gd;  
+} disk_dev;  
+  
+disk_dev device;//定义设备结构体  
+
+/* block_device_operations结构体的实现和上面的程序一样 */
+/* 省略.......... */
+
+```
+
+#### 模块init
+
+``` c
+    register_blkdev(BLK_MAJOR, blk_dev_name);
+
+    gd = alloc_disk(1);  //分配一个gendisk，分区是一个  
+    spin_lock_init(&lock); //初始化一个自旋锁  
+    gd->major = major;  
+    gd->first_minor = 0;   //第一个次设备号  
+    gd->fops = &blk_ops;   //关联操作函数  
+  
+    gd->queue = blk_init_queue(blk_request_func, &lock); //初始化请求队列并关联到gendisk  
+  
+    snprintf(gd->disk_name, 32, "blk%c", 'a');    
+    blk_queue_hardsect_size(gd->queue, 512);  //设置扇区大小512字节  
+    set_capacity(gd, 32);  //设置块设备大小 512*32=16K  
+    add_disk(gd);  
+    
+    
+    register_blkdev(BLK_MAJOR, blk_dev_name);
+      
+    device.data=vmalloc(DISK_SIZE);  
+    device.queue=blk_alloc_queue(GFP_KERNEL);//生成队列  
+    blk_queue_make_request(device.queue,disk_make_request);/*注册make_request  绑定请求制造函数*/  
+    printk("make_request succeed\n");
+    
+    device.gd=alloc_disk(1);//生成gendisk  
+    device.gd->major=BLK_MAJOR;//主设备号  
+    device.gd->first_minor=0;//此设备号  
+    device.gd->fops=&blk_fops;//块文件结构体变量  
+    device.gd->queue=device.queue;//请求队列  
+    device.gd->private_data=&device;  
+    sprintf(device.gd->disk_name,"disk%c",'a');//名字  
+    set_capacity(device.gd,DISK_SECTOR);//设置大小  
+    add_disk(device.gd);//注册块设备信息  
+    printk("gendisk succeed\n");      
+       return 0;  
+```
+
+这里已经是`blk_alloc_queue()`函数和`blk_queue_make_request()`函数了，之前是`blk_init_queue()`绑定request函数。
+
+
+#### 模块exit
+
+``` c
+    del_gendisk(device.gd);  
+    put_disk(device.gd);  
+    unregister_blkdev(BLK_MAJOR,BLK_NAME);  
+    vfree(device.data);  
+    printk("free succeed\n");  
+```
+
+这里注意是`put_disk()`而不是`blk_cleanup_queue()`函数了。
