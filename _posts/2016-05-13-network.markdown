@@ -1,0 +1,316 @@
+---
+layout:     post
+title:      "网络驱动程序"
+subtitle:   "基于一个虚拟的网络设备的驱动"
+date:       2016-05-13
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - linux
+    - 网络
+    - 驱动
+---
+
+学习字符设备和块设备驱动程序之后，三类标准Linux设备剩下的就是网络设备了。
+
+这里的程序是ldd3中的例子程序，内核还是Linux 2.6.10的，和现在最新的内核或多或少有一点区别，但是大体的思路和架构是一样的。
+
+### 设备结构
+
+`net_devic`结构是网络驱动程序的核心，驱动程序中几乎所有的函数都和其有关。当然，这个结构也比较复杂，简洁的介绍一下这个程序中用到的数据结构。
+
+#### 全局信息
+
+直接介绍一个常用的，name 为设备名称，分配时如果有 %d 格式，编号从0开始。
+
+``` c
+char name[IFNAMSIZ];
+```
+
+为了更直观一点显示 net_device 常用的结构，看分配设备时 `alloc_netdev()` 函数调用的 `snull_init()` 设置了哪些参数。
+
+``` c
+void snull_init(struct net_device *dev)
+{
+    struct snull_priv *priv;
+
+    ether_setup(dev);  /* assign some of the fields */
+
+    dev->open            = snull_open;
+    dev->stop            = snull_release;
+    dev->set_config      = snull_config;
+    dev->hard_start_xmit = snull_tx;
+    dev->do_ioctl        = snull_ioctl;
+    dev->get_stats       = snull_stats;
+    dev->change_mtu      = snull_change_mtu;  
+    dev->rebuild_header  = snull_rebuild_header;
+    dev->hard_header     = snull_header;
+    dev->tx_timeout      = snull_tx_timeout;
+    dev->watchdog_timeo = timeout;
+    if (use_napi)
+    {
+        dev->poll        = snull_poll;
+        dev->weight      = 2;
+    }
+    
+    /* keep the default flags, just add NOARP */
+    dev->flags           |= IFF_NOARP;
+    dev->features        |= NETIF_F_NO_CSUM;
+    dev->hard_header_cache = NULL;   /* Disable caching */
+
+    priv = netdev_priv(dev);
+    memset(priv, 0, sizeof(struct snull_priv));
+    spin_lock_init(&priv->lock);
+    snull_rx_ints(dev, 1);     /* enable receive interrupts */
+    snull_setup_pool(dev);
+}
+```
+
+#### 设备方法
+
+从上面的snull_init的函数中可以看到，初始化时设置的参数大多数都是设备方法。具体有open、stop、set_config、hard_start_xmit、do_ioctl、get_stats、change_mtu、rebuild_header、hard_header、tx_timeout等，下面还会具体介绍他们的实现。
+
+
+
+#### 接口信息
+
+初始化结构中的flags和features属于接口信息，`IFF_NOARP`表示接口不执行APR，`NETIF_F_NO_CSUM`表示不对数据包使用校验。
+
+
+### 打开和关闭
+
+#### 打开
+
+``` c
+
+int snull_open(struct net_device *dev)
+{
+    /* 对主板的硬件地址赋值"\0SNULx"，x为0或1 */
+    memcpy(dev->dev_addr, "\0SNUL0", ETH_ALEN);
+    if (dev == snull_devs[1])
+        dev->dev_addr[ETH_ALEN-1]++; /* \0SNUL1 */
+    netif_start_queue(dev);
+    return 0;
+}
+```
+
+#### 关闭
+
+``` c
+int snull_release(struct net_device *dev)
+{
+    netif_stop_queue(dev); /* can't transmit any more */
+    return 0;
+}
+```
+
+### 发送数据
+
+
+#### 发送函数
+
+``` c
+int snull_tx(struct sk_buff *skb, struct net_device *dev)
+{
+    int len;
+    char *data, shortpkt[ETH_ZLEN];
+    struct snull_priv *priv = netdev_priv(dev);
+	
+    data = skb->data;
+    len = skb->len;
+    if (len < ETH_ZLEN)
+    {
+        memset(shortpkt, 0, ETH_ZLEN);
+        memcpy(shortpkt, skb->data, skb->len);
+        len = ETH_ZLEN;
+        data = shortpkt;
+    }
+    dev->trans_start = jiffies; /* 保存时间戳timestamp */
+    
+    /* 记录skb，以便在中断时释放 */
+    priv->skb = skb;
+    
+    /* 下面的这个函数和硬件相关，需要根据具体的芯片配置 */
+    snull_hw_tx(data, len, dev);
+    
+    return 0;
+}
+```
+
+#### 传输超时
+
+
+``` c
+void snull_tx_timeout (struct net_device *dev)
+{
+    struct snull_priv *priv = netdev_priv(dev);
+    
+    PDEBUG("Transmit timeout at %ld, latency %ld\n", jiffies, jiffies - dev->trans_start);
+    
+    /* 模拟一个传输中断 */
+    priv->status = SNULL_TX_INTR;
+    snull_interrupt(0, dev, NULL);
+    priv->stats.tx_errors++;
+    netif_wake_queue(dev);
+    return;
+}
+```
+当snull设备在传输时发生超时，驱动程序调用 snull_interrupt 来填充"丢失"的中断，并调用 netif_wake_queue 重启传输队列。
+
+
+#### 并发控制
+
+在传送数据时，可以通过以下函数实现停止和唤醒。
+
+``` c
+/* 停止 */
+void netif_stop_queue(struct net_device *dev);
+void netif_tx_disable(struct net_device *dev);
+
+/* 唤醒 */
+void netif_wake_queue(struct net_device *dev);
+```
+
+### 接收数据
+
+接收数据在大部分硬件接口通过中断处理来控制。接口有两种可能中断处理器：新数据包到达，或者发送数据包完成。
+
+#### 中断处理
+
+``` c
+static void snull_regular_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+{
+    int statusword;
+    struct snull_priv *priv;
+    struct snull_packet *pkt = NULL;
+    
+    struct net_device *dev = (struct net_device *)dev_id;
+
+    if (!dev)
+        return;
+
+    /* Lock the device */
+    priv = netdev_priv(dev);
+    spin_lock(&priv->lock);
+
+    /* retrieve statusword: real netdevices use I/O instructions */
+    statusword = priv->status;
+    priv->status = 0;
+    if (statusword & SNULL_RX_INTR) 
+    {
+    /* 调用接收函数snull_rx */
+        pkt = priv->rx_queue;
+        if (pkt) 
+        {
+            priv->rx_queue = pkt->next;
+            snull_rx(dev, pkt);
+        }
+    }
+    if (statusword & SNULL_TX_INTR) 
+    {
+    /* 一个传输过程完毕，释放skb */
+        priv->stats.tx_packets++;
+        priv->stats.tx_bytes += priv->tx_packetlen;
+        dev_kfree_skb(priv->skb);
+    }
+
+    spin_unlock(&priv->lock);
+    if (pkt) snull_release_buffer(pkt);
+    return;
+}
+```
+
+#### 接收函数
+
+``` c
+void snull_rx(struct net_device *dev, struct snull_packet *pkt)
+{
+    struct sk_buff *skb;
+    struct snull_priv *priv = netdev_priv(dev);
+
+    /* 已经获得和数据包，建立封装它们的skb，以便上层处理 */
+    skb = dev_alloc_skb(pkt->datalen + 2);
+    if (!skb) 
+    {
+        if (printk_ratelimit())
+            printk(KERN_NOTICE "snull rx: low on mem - packet dropped\n");
+         priv->stats.rx_dropped++;
+         goto out;
+    }
+    skb_reserve(skb, 2);
+    memcpy(skb_put(skb, pkt->datalen), pkt->data, pkt->datalen);
+    
+    /* 写入数据，然后传递给接收层 */
+    skb->dev = dev;
+    skb->protocol = eth_type_trans(skb, dev);
+    skb->ip_summed = CHECKSUM_UNNECESSARY;
+    priv->stats.rx_packets++;
+    priv->stats.rx_bytes += pkt->datalen;
+    netif_rx(skb);
+    
+    out:
+    return;
+}
+```
+
+
+### 连接到内核
+
+在模块init中注册分配并注册设备，在模块exit中注销并释放设备。
+
+#### init模块
+
+``` c
+int snull_init_module(void)
+{
+    int result, i, ret = -ENOMEM;
+
+    /* 分配设备 */
+    snull_devs[0] = alloc_netdev(sizeof(struct snull_priv), "sn%d", snull_init);
+    snull_devs[1] = alloc_netdev(sizeof(struct snull_priv), "sn%d", snull_init);
+    
+    if (snull_devs[0] == NULL || snull_devs[1] == NULL)
+        goto out;
+
+    /* 注册设备，同时调用初始化函数 */
+    ret = -ENODEV;
+    for (i = 0; i < 2;  i++)
+        if ((result = register_netdev(snull_devs[i])))
+            printk("snull: error %i registering device \"%s\"\n", result, snull_devs[i]->name);
+        else
+            ret = 0;
+    out:
+        if (ret)
+            snull_cleanup();
+        return ret;
+}
+```
+
+
+#### exit模块
+
+``` c
+void snull_cleanup(void)
+{
+    int i;
+    
+    for (i = 0; i < 2;  i++)
+    {
+        if (snull_devs[i])
+        {
+            /* 注销设备 */
+            unregister_netdev(snull_devs[i]);
+            /* 调用内部清除函数 */
+            snull_teardown_pool(snull_devs[i]);
+            /* 释放设备 */
+            free_netdev(snull_devs[i]);
+        }
+    }
+    return;
+}
+```
+
+### 其他问题
+
+上面介绍的都是网络设备驱动的核心代码，当然还有一些很重要的程序，如：MAC地址解析，定制ioctl命令，不使用接收中断，组播等。这是一个虚拟的网络设备驱动程序，等以后具体研究了lookback、e100、DM9000等实体驱动时再来讨论它们，继续努力。
