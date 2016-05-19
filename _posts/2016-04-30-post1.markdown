@@ -42,10 +42,11 @@ tags:
 
 #### 内核模块
 
-#### 文件系统
+#### [内核IO访问](http://www.eeluobu.com/blog/2016/05/03/io)
 
-#### 设备模型
+#### [设备模型](http://www.eeluobu.com/blog/2016/05/02/device1)
 
+#### [设备驱动实例](http://www.eeluobu.com/blog/2016/05/05/tty)
 
 ## QT
 

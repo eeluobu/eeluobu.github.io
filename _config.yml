@@ -25,7 +25,7 @@ facebook_username:  eeluobu
 # from 2016, 'pygments' is unsupported on GitHub Pages. Use 'rouge' for highlighting instead.
 highlighter: rouge
 permalink: /blog/:year/:month/:day/:title
-paginate: 5
+paginate: 8
 exclude: ["less","node_modules","Gruntfile.js","package.json","README.md"]
 anchorjs: true                          # if you want to customize anchor. check out line:229 of `post.html`
 
@@ -63,7 +63,7 @@ duoshuo_share: false                     # set to false if you want to use Comme
 ba_track_id: false
 # Google Analytics
 ga_track_id: false            # Format: UA-xxxxxx-xx
-#ga_domain: # huangxuan.me
+#ga_domain: # www.eeluobu.com
 
 
 
