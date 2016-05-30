@@ -1,0 +1,583 @@
+---
+layout:     post
+title:      "Linux串口操作"
+subtitle:   "基于多路复用的IO编程"
+date:       2016-05-16
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - 串口
+    - IO编程
+    - 多路复用
+---
+
+### 多路复用
+
+在处理并发服务方面，除了使用多进程和多线程实现外，还可以采用I/O多路复用。与多进程和多线程技术相比，I/O多路复用技术的最大优势是系统开销小，系统不必创建进程或者线程，也不必维护这些进程或者线程，从而大大减小了系统的开销。
+
+select()和poll()是处理I/O复用的一个高效的方法，它可以具体设置程序中每一个所关心的文件描述符的`条件`、`希望等待的时间`等。select()和poll()函数返回时内核会通知已准备好的文件描述符数量、已准备好的条件等。通过返回结果，可以调用相应的I/O处理函数。
+
+
+#### select()
+
+select()函数允许进程指示内核等待多个事件中的任意一个发生，并仅在一个或多个事件发生或经过指定的时间时才唤醒进程。
+
+select()文件描述符处理函数
+
+``` c
+FD_ZERO(fd_set *set)          //清除一个文件描述符集
+FD_SET(int fd, fd_set *set)   //将一个文件描述符加入描述符集中
+FD_CLR(int fd, fd_set *set)   //将一个文件描述符从描述符集中删除
+FD_ISSET(int fd, fd_set *set) //如果fd为fd_set中的一个元素，返回非零值
+```
+
+select()函数
+
+``` c
+int select(int numfds, fd_set *readfds, fd_set *writefds, fd_set *exeptfds, struct timeval *timeout)
+```
+numfds为要监视的文件描述符的最大值加1。然后分别为读、写、异常文件描述符集。timeout为超时，结构体中有秒和微秒的设置。
+
+
+``` c
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <time.h>
+#include <errno.h>
+
+#define MAX_BUFFER_SIZE  1024  /* 缓冲区大小*/
+#define IN_FILES   3       /* 多路复用输入文件数目*/
+#define TIME_DELAY 60      /* 超时时间秒数 */
+#define MAX(a, b)  ((a > b)?(a):(b))
+
+int main(void)
+{
+    int fds[IN_FILES];
+    char buf[MAX_BUFFER_SIZE];
+    int i, res, real_read, maxfd;
+    struct timeval tv;
+    fd_set inset,tmp_inset;
+    
+    /*首先按一定的权限打开两个源文件*/
+    
+    fds[0] = 0;
+    
+    if((fds[1] = open ("in1", O_RDONLY|O_NONBLOCK)) < 0)
+    {
+        printf("Open in1 error\n");
+        return 1;
+    }
+    
+    if((fds[2] = open ("in2", O_RDONLY|O_NONBLOCK)) < 0)
+    {
+        printf("Open in2 error\n");
+        return 1;
+    }
+    
+    /*取出两个文件描述符中的较大者*/
+    maxfd = MAX(MAX(fds[0], fds[1]), fds[2]);
+    
+    /*初始化读集合inset，并在读集合中加入相应的描述集*/
+    FD_ZERO(&inset); 
+    for (i = 0; i < IN_FILES; i++)
+    {
+        FD_SET(fds[i], &inset);
+    }
+    FD_SET(0, &inset);
+
+    tv.tv_sec = TIME_DELAY;
+    tv.tv_usec = 0;
+  	
+    /*循环测试该文件描述符是否准备就绪，并调用select函数对相关文件描述符做对应操作*/
+    while(FD_ISSET(fds[0],&inset) || FD_ISSET(fds[1],&inset) || FD_ISSET(fds[2], &inset))
+    { 
+        tmp_inset = inset;
+        res = select(maxfd + 1, &tmp_inset, NULL, NULL, &tv);
+        
+        switch(res)
+        {
+        case -1:
+        {
+            printf("Select error\n");
+            return 1;
+        }
+        break;
+        
+        case 0: /* Timeout */
+        {
+            printf("Time out\n");
+            return 1;
+        }  			
+        break;
+        
+        default:
+        {
+            for (i = 0; i < IN_FILES; i++)
+            {
+                if (FD_ISSET(fds[i], &tmp_inset))
+                {
+                    memset(buf, 0, MAX_BUFFER_SIZE);
+                    real_read = read(fds[i], buf, MAX_BUFFER_SIZE);
+                    
+                    if (real_read < 0)
+                    {
+                        if (errno != EAGAIN)
+                        {
+                            return 1;
+                        }
+                    }
+                    else if (!real_read)
+                    {
+                        close(fds[i]);
+                        FD_CLR(fds[i], &inset);
+                    }
+                    else
+                    {
+                        if (i == 0)
+                        {
+                            if ((buf[0] == 'q') || (buf[0] == 'Q'))
+                            {
+                                return 1;
+                            }
+                        }
+                        else
+                        {
+                            buf[real_read] = '\0';
+                            printf("%s", buf);
+                        }
+                    }
+                } /* end of if */  					
+            } /* end of for */
+        }
+        break;  
+        
+        } /* end of switch */ 		
+    } /*end of while */
+    exit(0);
+}
+```
+
+
+#### poll()
+
+poll()函数
+
+``` c
+int poll(struct pollfd *fds, int numfds, int timeout)
+```
+numfds需要监听的文件个数。timeout阻塞超时时间单位为毫秒。
+
+**结构体 pollfd**
+
+``` c
+struct pollfd
+{
+    int   fd;      //需要监听的文件描述符
+    short events;  //需要监听的事件
+    short revents; //已发生的事件
+}
+```
+
+上面的select()函数功能用poll()实现代码：
+
+``` c
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <errno.h>
+#include <poll.h>
+#define MAX_BUFFER_SIZE  1024 /* 缓冲区大小 */
+#define IN_FILES     3      /* 多路复用输入文件数目 */
+#define TIME_DELAY   60000  /* 超时时间秒数:60秒 */
+#define MAX(a, b) ((a > b) ? (a) : (b))
+
+int main(void)
+{
+    struct pollfd fds[IN_FILES];
+    char buf[MAX_BUFFER_SIZE];
+    int i, res, real_read, maxfd;
+    
+    /*首先按一定的权限打开两个源文件*/
+    fds[0].fd = 0;
+    if((fds[1].fd = open ("in1", O_RDONLY|O_NONBLOCK)) < 0)
+    {
+        printf("Open in1 error\n");
+        return 1;
+    }  		    
+    
+    if((fds[2].fd = open ("in2", O_RDONLY|O_NONBLOCK)) < 0)
+    {
+        printf("Open in2 error\n");
+        return 1;
+    }
+    /*取出两个文件描述符中的较大者*/
+    for (i = 0; i < IN_FILES; i++)
+    {
+        fds[i].events = POLLIN;
+    }
+    
+    /* 循环测试是否存在正在监听的文件描述符 */
+    while(fds[0].events || fds[1].events || fds[2].events)
+    {
+    if (poll(fds, IN_FILES, 0) < 0) 
+    {
+        printf("Poll error or Time out\n");
+        return 1;
+    }		
+    
+    for (i = 0; i< IN_FILES; i++)
+    {
+        if (fds[i].revents) /* 判断在哪个文件上发生了事件*/
+        {
+            memset(buf, 0, MAX_BUFFER_SIZE);
+            real_read = read(fds[i].fd, buf, MAX_BUFFER_SIZE);
+            if (real_read < 0)
+            {
+                if (errno != EAGAIN)
+                {
+                    return 1; /* 系统错误，结束运行*/
+                }
+            }
+            else if (!real_read)
+            {
+                close(fds[i].fd);
+                fds[i].events = 0; /* 取消对该文件的监听 */
+            }
+            
+            else
+            {
+                if (i == 0) /* 如果在标准输入上有数据输入时 */
+                {
+                    if ((buf[0] == 'q') || (buf[0] == 'Q'))
+                    {
+                        return 1; /*输入"q"或"Q"则会退出*/
+                    }
+                }
+                else
+                { /* 将读取的数据先是到终端上 */
+                    buf[real_read] = '\0';
+                    printf("%s", buf);
+                }
+            } /* end of if real_read*/
+        } /* end of if revents */
+    } /* end of for */
+    } /*end of while */
+    exit(0);
+}
+```
+
+
+### 串口实例
+
+#### 串口配置
+
+``` c
+/* uart_api.h */
+#ifndef   UART_API_H
+#define   UART_API_H
+
+#define   GNR_COM     0
+#define   USB_COM     1
+#define   COM_TYPE    GNR_COM
+#define   MAX_COM_NUM     3
+#define   HOST_COM_PORT   1
+#define   TARGET_COM_PORT 2
+#define   BUFFER_SIZE     1024
+#define   TIME_DELAY      180
+#define   SEL_FILE_NUM    2
+#define   RECV_FILE_NAME  "recv.dat"
+
+int open_port(int com_port);
+int set_com_config(int fd,int baud_rate, int data_bits, char parity, int stop_bits);
+
+#endif /* UART_API_H */
+
+
+/* uart_api.c */
+
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <errno.h>
+#include "uart_api.h"
+
+/*打开串口函数*/
+int open_port(int com_port)
+{
+    int fd;
+
+#if (COM_TYPE == GNR_COM)
+    char *dev[] = {"/dev/ttyS0", "/dev/ttyS1", "/dev/ttyS2"};
+#else
+    char *dev[] = {"/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2"};
+#endif
+	
+    if ((com_port < 0) || (com_port > MAX_COM_NUM))
+    {
+        return -1;
+    }
+
+    fd = open(dev[com_port - 1], O_RDWR|O_NOCTTY|O_NDELAY);
+    
+    if (fd < 0)
+    {
+        perror("open serial port");
+        return(-1);
+    }
+    
+    /*恢复串口为阻塞状态*/
+    if (fcntl(fd, F_SETFL, 0) < 0)
+    {
+        perror("fcntl F_SETFL\n");
+    }
+	
+    /*测试是否为终端设备*/
+    if (isatty(STDIN_FILENO) == 0)
+    {
+        perror("standard input is not a terminal device");
+    }
+    
+    return fd;
+}
+
+int set_com_config(int fd,int baud_rate, int data_bits, char parity, int stop_bits)
+{
+    struct termios new_cfg,old_cfg;
+    int speed;
+    
+    /*保存测试现有串口参数设置，在这里如果串口号等出错，会有相关的出错信息*/
+    if (tcgetattr(fd, &old_cfg)  !=  0) 
+    {
+        perror("tcgetattr");
+        return -1;
+    }
+    
+    /* 步骤一，设置字符大小 */
+    new_cfg = old_cfg;
+    cfmakeraw(&new_cfg);
+    new_cfg.c_cflag &= ~CSIZE; 
+    
+    /* 设置波特率，前面要加上B */
+    cfsetispeed(&new_cfg, speed);
+    cfsetospeed(&new_cfg, speed);
+    
+    /*设置停止位*/
+    switch (data_bits)
+    {
+        case 7:
+        {
+            new_cfg.c_cflag |= CS7;
+        }
+        break;
+        
+        default:
+        case 8:
+        {
+            new_cfg.c_cflag |= CS8;
+        }
+        break;
+    }
+    
+    /*设置奇偶校验位*/
+    switch (parity)
+    {
+    	
+    default:
+    case 'n':
+    case 'N':
+    {
+        new_cfg.c_cflag &= ~PARENB;   
+        new_cfg.c_iflag &= ~INPCK;    
+    }
+    break;
+    
+    case 'o':
+    case 'O':
+    {
+        new_cfg.c_cflag |= (PARODD | PARENB); 
+        new_cfg.c_iflag |= INPCK;            
+    }
+    break;
+    
+    case 'e':
+    case 'E':
+    {
+        new_cfg.c_cflag |= PARENB;     
+        new_cfg.c_cflag &= ~PARODD;   
+        new_cfg.c_iflag |= INPCK;    
+    }
+    break;
+
+    case 's':  /*as no parity*/
+    case 'S':
+    {
+        new_cfg.c_cflag &= ~PARENB;
+        new_cfg.c_cflag &= ~CSTOPB;
+    }
+    break;
+    }
+    
+    /*设置停止位*/
+    switch (stop_bits)
+    {
+    default:
+    case 1:
+    {
+        new_cfg.c_cflag &=  ~CSTOPB;
+    }
+    break;
+
+    case 2:
+    {
+        new_cfg.c_cflag |= CSTOPB;
+    }
+    }
+	
+    /*设置等待时间和最小接收字符*/
+    new_cfg.c_cc[VTIME]  = 0;
+    new_cfg.c_cc[VMIN] = 1;
+    
+    /*处理未接收字符*/
+    tcflush(fd, TCIFLUSH);
+    
+    /*激活新配置*/
+    if((tcsetattr(fd, TCSANOW, &new_cfg)) != 0)
+    {
+        perror("tcsetattr");
+        return -1;
+    }
+    
+    return 0;
+}
+```
+
+
+
+#### 读写例程
+
+``` c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include "uart_api.h"
+
+int main(void) 
+{
+    int fds[SEL_FILE_NUM], recv_fd, maxfd;
+    char buff[BUFFER_SIZE];
+    fd_set inset,tmp_inset;
+    struct timeval tv;
+    unsigned loop = 1;
+    int res, real_read, i;
+    
+    if ((recv_fd = open(RECV_FILE_NAME, O_CREAT|O_WRONLY, 0644)) < 0)
+    {
+        perror("open");
+        return 1;
+    }
+    
+    /* 标准输入 */
+    fds[0] = STDIN_FILENO; 
+    
+    /* 打开串口 */
+    if((fds[1] = open_port(HOST_COM_PORT)) < 0)
+    {
+        perror("open_port");
+        return 1;
+    }
+    
+    /* 配置串口 */
+    if(set_com_config(fds[1], B115200, 8, 'N', 1) < 0) 
+    {
+        perror("set_com_config");
+        return 1;
+    }
+
+    FD_ZERO(&inset); 
+    FD_SET(fds[0], &inset);
+    FD_SET(fds[1], &inset);
+    maxfd = (fds[0] > fds[1])?fds[0]:fds[1];
+    tv.tv_sec = TIME_DELAY;
+    tv.tv_usec = 0;
+	
+    printf("Input some words(enter 'quit' to exit):\n");
+    while (loop && (FD_ISSET(fds[0], &inset) || FD_ISSET(fds[1], &inset)))
+    {
+        tmp_inset = inset;
+        res = select(maxfd + 1, &tmp_inset, NULL, NULL, &tv);
+        
+        switch(res)
+        {
+            case -1:
+            {
+                perror("select");
+                loop = 0;
+            }
+            break;
+            
+            case 0: /* Timeout */
+            {
+                perror("select time out");
+                loop = 0;
+            }
+            break;
+            
+            default:
+            {
+                for (i = 0; i < SEL_FILE_NUM; i++)
+                {
+                    if (FD_ISSET(fds[i], &tmp_inset))
+                    {
+                        memset(buff, 0, BUFFER_SIZE);
+                        real_read = read(fds[i], buff, BUFFER_SIZE);
+                        if ((real_read < 0) && (errno != EAGAIN))
+                        {
+                            loop = 0;
+                        }
+                        else if (!real_read)
+                        {
+                            close(fds[i]);
+                            FD_CLR(fds[i], &inset);
+                        }
+                        else
+                        {
+                            buff[real_read] = '\0';
+                            if (i == 0)
+                            {
+                                write(fds[1], buff, strlen(buff));
+                                printf("Input some words(enter 'quit' to exit):\n");
+                            }
+                            else if (i == 1)
+                            {
+                                write(recv_fd, buff, real_read);
+                            }
+                            
+                            if (strncmp(buff, "quit", 4) == 0)
+                            {
+                                loop = 0;
+                            }
+                        }
+                    } /* end of if FD_ISSET */
+                } /* for i */
+            }
+        } /* end of switch */
+    } /* end of while */
+    
+    close(recv_fd);	
+    return 0;
+}
+```
