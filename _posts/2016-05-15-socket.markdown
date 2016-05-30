@@ -22,26 +22,32 @@ tags:
 
 创建守护进程，当运行客户端程序的终端关闭时，依然能够提供来自客服端的服务请求。
 
+下面的程序用于创建守护进程，基本的步骤都做了注释和介绍。首先是要创建一个孤儿进程，使下面的进程都变为操作系统init进程的子进程，从而不受终端影响。然后在子进程中创建一个新的会话、改变当前目录、重设文件权限等等。
+
 ``` c
     pid_t pid0;
     int i;
     
+    /* 创建子进程 */
     if ((pid0 = fork()) < 0)
     {
         perror("fail to fork in first");
         exit(-1);
     }
+    
+    /* 父进程退出 */
     else if (pid0 > 0)
     {
         exit(0);
     }
     
-    setsid();
-    chdir("/");
-    umask(0);
+    /* 创建守护进程常规步骤 */
+    setsid();    //在子进程中创建一个新的会话
+    chdir("/");  //改变当前目录为根目录
+    umask(0);    //重设文件权限
     for(i = 0; i < getdtablesize(); i++)
     {
-        close(i);
+        close(i);  //关闭文件描述符
     }
     
 ```
@@ -49,6 +55,7 @@ tags:
 
 #### 建立网络服务
 
+下面的程序时创建网络连接中服务器端的代码。具体为创建socket、设置地址和端口、bind()绑定地址、listen()创建未处理请求队列。
 
 ``` c
     int listenfd, connfd;
@@ -56,35 +63,62 @@ tags:
     struct sockaddr_in myaddr;
     pid_t pid;
     
+    /* 判断输入格式 */
     if (argc < 3)
     {
         printf("Usage : %s <serv_ip> <serv_port>\n", argv[0]);
         exit(-1);
     }
     
+    /* 创建socket */
     if ((listenfd = socket(PF_INET, SOCK_STREAM, 0)) < 0)
     {
         perror("fail to socket");
         exit(-1);
     }
     
+    /* 设置地址和端口 */
     bzero(&myaddr, sizeof(myaddr));
     myaddr.sin_family = PF_INET;
     myaddr.sin_port = htons(atoi(argv[2]));
     myaddr.sin_addr.s_addr = inet_addr(argv[1]);
     
+    /* 绑定地址 */
     if (bind(listenfd, (SA *)&myaddr, sizeof(myaddr)) < 0)
     {
         perror("fail to bind");
         exit(-1);
     }
     
+    /* 创建未处理请求队列 */
     listen(listenfd, 5);
     
     
 ```
 
 #### 多进程处理
+
+为了实现服务器的并发处理，首先将对每一个连接请求的处理都放在子进程中；然后使用while不断获得发送过来的数据，发送给客户端程序；最后在父进程中关闭连接到客户端的文件描述符。因为子进程还在运行，所以对发送和接收没有影响。
+
+**僵死进程**
+
+> 子进程退出时，父进程并未对其发出的SIGCHLD信号进行适当处理，导致子进程停留在僵死状态等待其父进程为其收尸，这个状态下的子进程就是僵死进程。
+
+为了防止僵死进程的出现，使用 `signal(SIGCHLD, SIG_IGN)` 让父进程忽略对子进程退出时SIGCHLD信号的处理。也可以采用以下方法避免产生僵死进程。
+
+``` c
+/* 在main函数外面定义处理函数 */
+void handler(int signo)
+{
+    waitpid(-1, NULL, WNOHANG);
+    return;
+}
+
+/* 在main函数中设定函数 */
+signal(SIGCHLD, handler);
+```
+
+下面为服务器处理多进程的代码：
 
 ``` c
     signal(SIGCHLD, SIG_IGN);
@@ -100,6 +134,8 @@ tags:
             perror("fail to fork");
             exit(-1);
         }
+        
+        /* 子进程 */
         else if (pid == 0)
         {
             while (recv(connfd, buf, N, 0) >0)
@@ -109,6 +145,8 @@ tags:
             }
             exit(0);
         }
+        
+        /* 父进程 */
         else
         {
             close(connfd);
@@ -226,6 +264,8 @@ int main(int argc, char *argv[])
 
 ### 客户端
 
+客户端的程序就比较简单了，首先按照socket编程的步骤建立网络连接，然后一直获得终端屏幕上的输入，然后发送接收数据即可。
+
 #### 建立网络连接
 
 ``` c
@@ -278,6 +318,8 @@ int main(int argc, char *argv[])
 
 
 #### 源程序
+
+客户端的源代码如下：
 
 ``` c
 #include <stdio.h>
@@ -336,4 +378,12 @@ int main(int argc, char *argv[])
     
     return 0;
 }
+```
+
+#### 测试
+
+首先运行服务器端，然后再运行客户端，注意要设定好ip和端口号。最后可以通过下面的命令查看服务器守护进程的情况。
+
+``` bash
+ps -ef | grep server
 ```
