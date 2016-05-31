@@ -1,0 +1,307 @@
+---
+layout:     post
+title:      "进程控制开发"
+subtitle:   "多进程和守护进程"
+date:       2016-05-16
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - 多进程
+    - 守护进程
+---
+
+### 进程
+
+对进程的定义有好多种。如：进程是一个独立的可调度活动；进程是一个抽象的实体，当它执行某个任务时，要分配和释放各种资源；进程是可以并行执行的计算单位；等等。尽管以上的概念都不相同，但对进程的本质介绍是一样的。即进程是一个程序的一次执行过程，同时也是资源分配的最小单元。
+
+### 进程相关函数
+
+下面介绍和进程相关的一些函数，包括进程的创建、退出、阻塞等。
+
+#### fork()
+
+Linux中创建一个新的进程，唯一的方法就是使用fork()函数。
+
+这个函数本身比较简单
+
+``` c
+pid_t fork(void)
+```
+
+返回值为0：子进程；-1：出错；子进程ID：父进程。
+
+执行fork()之后，子进程继承了父进程的整个地址空间，包括进程上下文、代码段、进程堆栈、内存信息等等，子进程独有的只有它的进程号、资源 使用、计时器等。
+
+#### wait函数
+
+
+
+**wait()**
+
+wait()函数用于使父进程阻塞，直到一个子进程结束或者该进程接收到了一个指定的信号为止。
+
+``` c
+pid_t wait(int *status)
+```
+
+可以通过status获得子进程的结束状态。返回值：成功返回已结束的子进程号，失败返回-1。
+
+**waitpid()**
+
+waitpid()的基本功能和wait()一样，但是它提供了若干个选项，相应的功能就更多。
+
+``` c
+pid_t waitpid(pid_t pid, int *status, int options)
+```
+
+`pid：`大于0：只等待此ID的子进程退出；-1：等待任何子进程退出，和wait()一样；0：等待组ID等于调用进程的组ID的任一子进程；小于-1：等待组ID等于pid绝对值的任一子进程。
+
+`status：`同wait()。
+
+`option：`WNOHANG：若pid指定子进程没有退出，则不阻塞父进程，返回0值；WUNTRACED：作业控制，由pid指定的子进程状态已暂停，返回其状态；0：阻塞父进程，等待子进程退出。
+
+
+#### exit函数
+
+exit()和_exit()都用来终止进程。`_exit()`直接使进程停止运行，清除内存空间和内核中的数据结构。`exit()`在调用exit系统之前，检查文件的打开情况，把文件缓冲区中的内容写回文件，即清理I/O缓冲。
+
+**exit()**
+
+``` c
+void exit(int status)
+```
+
+
+**_exit()**
+
+``` c
+void _exit(int status)
+```
+
+其中status参数可以用来传递进程结束时的状态，一般0表示`正常结束`，其他值表示出现了错误。可以用wait()接收子进程的返回值，从而针对不同的错误进行不同的处理。
+
+#### exec函数族
+
+exec函数族提供了一个在进程中启动另一个程序执行的方法。
+
+``` c
+int execl(const char *path, const char *arg, …)       //参数为列举方式
+int execv(const char *path, char *const argv[])       //参数为数组方式
+int execle(const char *path, const char *arg, …, char *const envp[])  //参数列举，传递新进程环境变量
+int execve(const char *path, char *const argv[], char *const envp[])  //参数数组，传递新进程环境变量
+int execlp(const char *file, const char *arg, …)    //参数列举方式，文件名为可执行文件
+int execvp(const char *file, char *const argv[])    //参数数组方式，文件名为可执行文件
+```
+
+举个例子，如果在shell里面执行`ps -ef`，下面的程序execl和execlp是相同的效果
+
+``` c
+execl("/bin/ps", "ps", "-ef", NULL);
+execlp("ps", "ps", "-ef", NULL);
+```
+
+向进程中添加环境变量，并通过`env`命令查看当前环境变量，下面的程序execle和execve效果相同
+
+``` c
+char *arg[] = {"env", NULL};
+char *envp[] = {"PATH=/tmp", "USER=david", NULL};
+
+execle("/usr/bin/env", "env", NULL, envp);
+execve("/usr/bin/env", arg, envp);
+```
+
+
+注意：使用exec函数族时，要加上错误判断语句，exec很容易执行失败，上面的程序为了简单没有加上；系统调用是execve()，其他的都是库函数，最终来调用它。
+
+
+#### 多进程实例
+
+在父进程中创建两个子进程，其中一个子进程通过execlp()执行“ ls -l ”命令，另一个子进程暂停5s后退出，父进程先阻塞等待第一个进程结束，然后非阻塞等待第二个子进程，在这个过程中打印子进程没有退出的消息，直到子进程退出，然后打印退出消息。
+
+``` c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+int main(void)
+{
+    pid_t child1, child2, child;
+    
+    /*创建两个子进程*/
+    child1 = fork();
+    
+    /*子进程1的出错处理*/
+    if (child1 == -1)
+    {
+        printf("Child1 fork error\n");
+        exit(1);
+    }
+    else if (child1 == 0) /*在子进程1中调用execlp函数*/
+    {
+        printf("In child1: execute 'ls -l'\n");
+        
+        if (execlp("ls", "ls", "-l", NULL) < 0)
+        {
+            printf("Child1 execlp error\n");
+        }
+    }
+    else /*在父进程中等待子进程2的退出*/
+    {
+        child2 = fork();
+        if (child2 == -1) /*子进程2的出错处理*/
+        {
+            printf("Child2 fork error\n");
+            exit(1);
+        }
+        else if( child2 == 0 ) /*在子进程2中使其暂停5s*/
+        {
+            printf("In child2: sleep for 5 seconds and then exit\n");
+            sleep(5);
+            exit(0);
+        }
+        
+        printf("In father process:\n");
+        
+        child = waitpid(child1, NULL, 0);
+        if (child == child1)
+        {
+            printf("Get child1 exit code\n");
+        }
+        else
+        {
+            printf("Error occured!\n");
+        }
+        
+        do
+        {
+            child = waitpid(child2, NULL, WNOHANG );
+            if (child == 0)
+            {
+                printf("The child2 process has not exited!\n");
+                sleep(1);
+            }
+        } while (child == 0);
+        
+        if (child == child2)
+        {
+            printf("Get child2 exit code\n");
+        }
+        else
+        {
+            printf("Error occured!\n");
+        }
+    }
+    
+    exit(0);
+}
+```
+
+
+### 守护进程
+
+#### 创建过程
+
+下面的程序用于创建守护进程，基本的步骤都做了注释和介绍。首先是要创建一个孤儿进程，使下面的进程都变为操作系统init进程的子进程，从而不受终端影响。然后在子进程中创建一个新的会话、改变当前目录、重设文件权限、最后关闭文件描述符。
+
+``` c
+    pid_t pid0;
+    int i;
+    
+    /* 创建子进程 */
+    if ((pid0 = fork()) < 0)
+    {
+        perror("fail to fork in first");
+        exit(-1);
+    }
+    
+    /* 父进程退出 */
+    else if (pid0 > 0)
+    {
+        exit(0);
+    }
+    
+    /* 创建守护进程常规步骤 */
+    setsid();    //在子进程中创建一个新的会话
+    chdir("/");  //改变当前目录为根目录
+    umask(0);    //重设文件权限
+    for(i = 0; i < getdtablesize(); i++)
+    {
+        close(i);  //关闭文件描述符
+    }
+    
+```
+
+#### 实例
+
+首先建立一个守护进程，然后在该守护进程中新建一个子进程，这个子进程暂停10s，然后自动退出；守护进程阻塞等待子进程退出，并用日志记录子进程退出。
+
+``` c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <syslog.h>
+
+int main(void)
+{
+    pid_t child1,child2;
+    int i;
+    
+    /*创建子进程1*/
+    child1 = fork();
+    
+    if (child1 ==  1)
+    {
+        perror("child1 fork");
+        exit(1);
+    }
+    else if (child1 > 0)
+    {
+        exit(0);
+    }
+    
+    /*打开日志服务*/
+    openlog("daemon_proc_info", LOG_PID, LOG_DAEMON);
+    
+    /*以下几步是编写守护进程的常规步骤*/
+    setsid();
+    chdir("/");
+    umask(0);
+    for(i = 0; i < getdtablesize(); i++)
+    {
+        close(i);
+    }
+    
+    /*创建子进程2*/
+    child2 = fork();
+    if (child2 ==  1)
+    {
+        perror("child2 fork");
+        exit(1);
+    }
+    else if (child2 == 0)
+    {
+        /*在日志中写入字符串*/
+        syslog(LOG_INFO, " child2 will sleep for 10s ");
+        sleep(10);
+        syslog(LOG_INFO, " child2 is going to exit! ");
+        exit(0);
+    }
+    else
+    {
+        waitpid(child2, NULL, 0);
+        syslog(LOG_INFO, " child1 noticed that child2 has exited ");
+        
+        /*关闭日志服务*/
+        closelog();
+        while(1)
+        {
+            sleep(10);
+        }	
+    }
+}
+```
