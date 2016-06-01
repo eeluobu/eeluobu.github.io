@@ -8,7 +8,6 @@ header-img: "img/post.jpg"
 catalog:    true
 tags:
     - 多进程
-    - 守护进程
 ---
 
 ### 进程

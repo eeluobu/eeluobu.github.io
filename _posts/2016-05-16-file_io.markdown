@@ -37,8 +37,12 @@ select()函数
 ``` c
 int select(int numfds, fd_set *readfds, fd_set *writefds, fd_set *exeptfds, struct timeval *timeout)
 ```
-numfds为要监视的文件描述符的最大值加1。然后分别为读、写、异常文件描述符集。timeout为超时，结构体中有秒和微秒的设置。
+`numfds`为要监视的文件描述符的最大值加1。然后分别为读、写、异常文件描述符集。`timeout`为超时，结构体中有秒和微秒的设置。
 
+
+下面是一个select()实现多路复用的具体例子。通过select()函数来监听3个终端的输入，分别为：两个用mknod命令创建的管道（mknod 管道名 p）、主程序运行的终端。主程序终端的输入用来控制程序结束，如果是管道的输入则打印在屏幕上。
+
+`注意：`在每一次运行select()函数之后，如果要再次运行select()都要重新设置文件描述符集，即调用FD_ZERO()和FD_SET()进行重新设置。为了方便起见，程序中一般会使用备用的描述符集。
 
 ``` c
 #include <fcntl.h>
@@ -136,14 +140,14 @@ int main(void)
                     }
                     else
                     {
-                        if (i == 0)
+                        if (i == 0)  /* 在终端上有数据输入 */
                         {
                             if ((buf[0] == 'q') || (buf[0] == 'Q'))
                             {
                                 return 1;
                             }
                         }
-                        else
+                        else   /* 将管道数据显示到终端上 */
                         {
                             buf[real_read] = '\0';
                             printf("%s", buf);
@@ -168,7 +172,7 @@ poll()函数
 ``` c
 int poll(struct pollfd *fds, int numfds, int timeout)
 ```
-numfds需要监听的文件个数。timeout阻塞超时时间单位为毫秒。
+numfds需要监听的文件个数。timeout阻塞超时时间单位为毫秒。返回revents中文件描述符的个数，0：超时，-1：出错。
 
 **结构体 pollfd**
 
@@ -180,6 +184,9 @@ struct pollfd
     short revents; //已发生的事件
 }
 ```
+
+`events：` POLLIN：文件有数据可读；POLLPRI：有紧急数据可读；POLLOUT：可以向文件写入数据；POLLERR：文件出现错误；POLLHUP：与文件的连接被断开；POLLNVAL：文件描述符不合法。
+
 
 上面的select()函数功能用poll()实现代码：
 
@@ -216,7 +223,8 @@ int main(void)
         printf("Open in2 error\n");
         return 1;
     }
-    /*取出两个文件描述符中的较大者*/
+    
+    /* 将要监听的事件设置为输入 */
     for (i = 0; i < IN_FILES; i++)
     {
         fds[i].events = POLLIN;
@@ -252,15 +260,15 @@ int main(void)
             
             else
             {
-                if (i == 0) /* 如果在标准输入上有数据输入时 */
+                if (i == 0) /* 在终端上有数据输入 */
                 {
                     if ((buf[0] == 'q') || (buf[0] == 'Q'))
                     {
                         return 1; /*输入"q"或"Q"则会退出*/
                     }
                 }
-                else
-                { /* 将读取的数据先是到终端上 */
+                else  /* 将管道数据显示到终端上 */
+                { 
                     buf[real_read] = '\0';
                     printf("%s", buf);
                 }
@@ -276,6 +284,8 @@ int main(void)
 ### 串口实例
 
 #### 串口配置
+
+串口的配置一般包含：波特率、数据位、奇偶校验、停止位。下面的uart_api.c文件实现了两个函数，一个是打开串口的函数open_port()，一个是配置串口的函数set_com_config()。在实际使用中，只需要在头文件中包含uart_api.h就可以调用这两个函数来打开和配置串口了。
 
 ``` c
 /* uart_api.h */
@@ -296,7 +306,7 @@ int main(void)
 int open_port(int com_port);
 int set_com_config(int fd,int baud_rate, int data_bits, char parity, int stop_bits);
 
-#endif /* UART_API_H */
+#endif
 
 
 /* uart_api.c */
@@ -334,13 +344,13 @@ int open_port(int com_port)
         return(-1);
     }
     
-    /*恢复串口为阻塞状态*/
+    /* 恢复串口为阻塞状态 */
     if (fcntl(fd, F_SETFL, 0) < 0)
     {
         perror("fcntl F_SETFL\n");
     }
 	
-    /*测试是否为终端设备*/
+    /* 测试是否为终端设备 */
     if (isatty(STDIN_FILENO) == 0)
     {
         perror("standard input is not a terminal device");
@@ -354,14 +364,14 @@ int set_com_config(int fd,int baud_rate, int data_bits, char parity, int stop_bi
     struct termios new_cfg,old_cfg;
     int speed;
     
-    /*保存测试现有串口参数设置，在这里如果串口号等出错，会有相关的出错信息*/
+    /* 保存并测试现有串口参数设置 */
     if (tcgetattr(fd, &old_cfg)  !=  0) 
     {
         perror("tcgetattr");
         return -1;
     }
     
-    /* 步骤一，设置字符大小 */
+    /* 设置字符大小 */
     new_cfg = old_cfg;
     cfmakeraw(&new_cfg);
     new_cfg.c_cflag &= ~CSIZE; 
@@ -370,7 +380,7 @@ int set_com_config(int fd,int baud_rate, int data_bits, char parity, int stop_bi
     cfsetispeed(&new_cfg, speed);
     cfsetospeed(&new_cfg, speed);
     
-    /*设置停止位*/
+    /* 设置数据位 */
     switch (data_bits)
     {
         case 7:
@@ -387,7 +397,7 @@ int set_com_config(int fd,int baud_rate, int data_bits, char parity, int stop_bi
         break;
     }
     
-    /*设置奇偶校验位*/
+    /* 设置奇偶校验位 */
     switch (parity)
     {
     	
@@ -426,13 +436,13 @@ int set_com_config(int fd,int baud_rate, int data_bits, char parity, int stop_bi
     break;
     }
     
-    /*设置停止位*/
+    /* 设置停止位 */
     switch (stop_bits)
     {
     default:
     case 1:
     {
-        new_cfg.c_cflag &=  ~CSTOPB;
+        new_cfg.c_cflag &= ~CSTOPB;
     }
     break;
 
@@ -442,14 +452,14 @@ int set_com_config(int fd,int baud_rate, int data_bits, char parity, int stop_bi
     }
     }
 	
-    /*设置等待时间和最小接收字符*/
+    /* 设置等待时间和最小接收字符 */
     new_cfg.c_cc[VTIME]  = 0;
     new_cfg.c_cc[VMIN] = 1;
     
-    /*处理未接收字符*/
+    /* 处理未接收字符 */
     tcflush(fd, TCIFLUSH);
     
-    /*激活新配置*/
+    /* 激活新配置 */
     if((tcsetattr(fd, TCSANOW, &new_cfg)) != 0)
     {
         perror("tcsetattr");
@@ -463,6 +473,9 @@ int set_com_config(int fd,int baud_rate, int data_bits, char parity, int stop_bi
 
 
 #### 读写例程
+
+下面的程序使用select()通过多路复用的方式实现对串口的读写。可以在两台电脑上编译运行进行测试，还可以交叉编译后使用开发板和电脑进行测试。
+
 
 ``` c
 #include <stdio.h>
