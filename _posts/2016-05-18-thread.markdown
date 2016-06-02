@@ -1,0 +1,318 @@
+---
+layout:     post
+title:      "多线程编程"
+subtitle:   "线程间访问临界资源的同步互斥问题"
+date:       2016-05-18
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - 多线程
+    - 信号量
+---
+
+进程是系统中程序执行和资源分配的基本单位。每个进程都拥有自己的数据段、代码段和堆栈段，这就造成了进程在进行切换等操作时都需要有比较复杂的上下文切换等动作。为了减少处理器的空转时间，减少上下文切换开销，支持多处理器等，进程演化中出现了另一个概念——线程。
+
+### 线程
+
+下面介绍一些线程相关的函数，如线程的创建、退出、挂起等待、终止另一个线程。
+
+#### 创建线程
+
+**pthread_create()**函数用来创建一个线程，创建之后就程序就开始运行相关的线程函数。
+
+``` c
+int pthread_create(thread_t *thread, pthread_attr_t *attr, void *(*start_routine)(void *), void *arg)
+```
+
+`*thread：` 线程标识符。
+
+`*attr：` 线程属性设置，通常取NULL。
+
+`*start_routine：` 线程函数的函数指针。
+
+`*arg：` 传递给start_routine的参数。
+
+返回值：成功返回0，出错返回错误代码。
+
+
+#### 退出线程
+
+**pthread_exit()**函数用来终止自身线程。
+
+``` c
+void pthread_exit(void *retval)
+```
+
+`*retval：`线程结束时的返回值，可由pthread_join()来获取。
+
+
+**pthread_cancel()**函数用来在别的线程中终止另一个线程。
+
+``` c
+int pthread_cancel(pthread_t th)
+```
+
+`th：` 要终止的线程标识符。
+
+返回值：成功返回0，出错返回错误代码。
+
+
+#### 挂起等待
+
+**pthread_join()**函数可以将当前线程挂起，等待其他线程的结束。
+
+``` c
+int pthread_join(pthread_t th, void **thread_return)
+```
+
+`th：` 要等待线程的标识符。
+
+`**thread_return：` 用户定义指针，用来存储被等待线程结束时的返回值。
+
+返回值：成功返回0，出错返回错误代码。
+
+
+### 线程间同步和互斥
+
+线程是进程内独立的一条运行路线，处理器调度的最小单元。一个进程可以有多个线程，共享进程的资源和地址空间。所以任何线程对系统资源的操作都会影响其他线程，多线程的同步就变得很重要了。
+
+POSIX中两种线程同步机制，分别为互斥锁和信号量。互斥锁更适合用于同时可用的资源是`唯一`的情况，信号量更适合用于同时可用的资源为`多个`的情况。
+
+#### 互斥锁
+
+##### 初始化
+
+pthread_mutex_init()函数用来初始化互斥锁
+
+``` c
+int pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr)
+```
+
+`*mutex：` 互斥锁。
+
+`*mutexattr：` 有三种参数可以设置：快速互斥锁、递归互斥锁、检错互斥锁。
+
+返回值：成功0，出错返回错误码。
+
+##### 操作函数
+
+下面依次为上锁、判断上锁、解锁、消除互斥锁。
+
+``` c
+int pthread_mutex_lock(pthread_mutex_t *mutex)
+int pthread_mutex_trylock(pthread_mutex_t *mutex)
+int pthread_mutex_unlock(pthread_mutex_t *mutex)
+int pthread_mutex_destroy(pthread_mutex_t *mutex)
+```
+
+`*mutex：` 互斥锁。
+
+返回值：成功0，出错-1。
+
+
+#### 信号量
+
+##### 初始化
+
+sem_init()函数用于创建一个信号量，并初始化它的值。
+
+``` c
+int sem_init(sem_t *sem, int pshared, unsigned int value)
+```
+
+`*sem：` 信号量指针。
+
+`pshared：` 取0值，即表示这个信号量是当前进程的局部变量。（不知道在新版本的Linux内核中有改进没？）。
+
+`value：` 信号量的初始值。
+
+返回值：成功0，出错-1。
+
+##### 操作函数
+
+下面依次是，sem_wait()和sem_trywait()相当于P操作，区别是信号量小于0时，sem_wait()阻塞进程，sem_trywait()立即返回，sem_post()为V操作，sem_getvalue()得到信号量，sem_destroy()删除信号量。
+
+``` c
+int sem_wait(sem_t *sem)
+int sem_trywait(sem_t *sem)
+int sem_post(sem_t *sem)
+int sem_getvalue(sem_t *sem)
+int sem_destroy(sem_t *sem)
+```
+
+`*sem：` 信号量指针。
+
+返回值：成功0，出错-1。
+
+
+### 实例
+
+
+#### 实现原理
+
+下面的程序包括一个有限的缓冲区和两个线程，消费者和生产者，分别拿走和放入产品到缓冲区中。生产者在缓冲区满时需要等待，消费者在缓冲区空时也需要等待。实现访问临界资源——缓冲区的互斥和同步。
+
+其中avail和full分别用于解决生产者和消费者线程之间的同步问题，信号量mutex是用于这两个线程之间的互斥问题。avail表示缓冲区中的空单元数，初始为N；full表示缓冲区中非空单元数，初始为0；mutex为互斥信号量，初始为1。
+
+#### 代码
+
+
+``` c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <errno.h>
+#include <semaphore.h>
+#include <sys/ipc.h>
+
+#define MYFIFO       "myfifo"
+#define BUFFER_SIZE  3   /* 缓冲区的单元数 */
+#define UNIT_SIZE   5    /* 每个单元的大小 */
+#define RUN_TIME    30   /* 运行时间 */
+#define DELAY_TIME_LEVELS 5.0   /* 周期的最大值 */
+
+
+int fd;
+time_t end_time;
+sem_t mutex,full,avail;
+
+void *producer(void *arg)
+{
+    int real_write;
+    int delay_time = 0;
+    
+    while(time(NULL) < end_time)
+    {
+        delay_time = (int)(rand() * DELAY_TIME_LEVELS/(RAND_MAX) / 2.0) + 1;
+        sleep(delay_time);
+        
+        /* P操作信号量avail和mutex */
+        sem_wait(&avail);
+        sem_wait(&mutex);
+        
+        printf("\nProducer: delay = %d\n", delay_time);		
+        
+        /* 生产者写入数据 */
+        if ((real_write = write(fd, "hello", UNIT_SIZE)) == -1)
+        {
+            if(errno == EAGAIN)
+            {
+                printf("The FIFO has not been read yet.Please try later\n");
+            }
+        }
+        else
+        {
+            printf("Write %d to the FIFO\n", real_write);
+        }
+        
+        /* V操作信号量full和mutex */
+        sem_post(&full);
+        sem_post(&mutex);		
+    }
+    pthread_exit(NULL);
+}
+
+void *customer(void *arg)
+{
+    unsigned char read_buffer[UNIT_SIZE];
+    int real_read;
+    int delay_time;	
+    
+    while(time(NULL) < end_time)
+    {
+        delay_time = (int)(rand() * DELAY_TIME_LEVELS/(RAND_MAX)) + 1;
+        sleep(delay_time);
+        
+        /* P操作信号量full和mutex */
+        sem_wait(&full);
+        sem_wait(&mutex);
+        
+        memset(read_buffer, 0, UNIT_SIZE);
+        printf("\nCustomer: delay = %d\n", delay_time);
+        
+        if ((real_read = read(fd, read_buffer, UNIT_SIZE)) == -1)
+        {
+            if (errno == EAGAIN)
+            {
+                printf("No data yet\n");
+            }
+        }
+        
+        printf("Read %s from FIFO\n", read_buffer);
+        
+        /* V操作信号量avail和mutex */
+        sem_post(&avail);
+        sem_post(&mutex);
+    }
+    pthread_exit(NULL);
+}
+
+int main()
+{
+    pthread_t thrd_prd_id,thrd_cst_id;
+    pthread_t mon_th_id;
+    int ret;
+    
+    srand(time(NULL));
+    end_time = time(NULL) + RUN_TIME;
+    
+    /* 创建有名管道 */
+    if((mkfifo(MYFIFO, O_CREAT|O_EXCL) < 0) && (errno != EEXIST))
+    {
+        printf("Cannot create fifo\n");
+        return errno;
+    }
+    
+    /* 打开管道 */
+    fd = open(MYFIFO, O_RDWR);
+    if (fd == -1)
+    {
+        printf("Open fifo error\n");
+        return fd;
+    }
+    
+    /* 初始化互斥信号量为1 */
+    ret = sem_init(&mutex, 0, 1);
+    
+    /* 初始化avail信号量为N */
+    ret += sem_init(&avail, 0, BUFFER_SIZE);
+    
+    /* 初始化full信号量为0 */
+    ret += sem_init(&full, 0, 0);
+    
+    if (ret != 0)
+    {
+        printf("Any semaphore initialization failed\n");
+        return ret;
+    }
+    
+    /* 创建两个线程 */
+    ret = pthread_create(&thrd_prd_id, NULL, producer, NULL);
+    if (ret != 0)
+    {
+        printf("Create producer thread error\n");
+        return ret;
+    }
+    
+    ret = pthread_create(&thrd_cst_id, NULL, customer, NULL);
+    if(ret != 0)
+    {
+        printf("Create customer thread error\n");
+        return ret;
+    }
+    
+    pthread_join(thrd_prd_id, NULL);
+    pthread_join(thrd_cst_id, NULL);
+    
+    close(fd);
+    unlink(MYFIFO);
+    
+    return 0;
+}
+```
+
+
+
