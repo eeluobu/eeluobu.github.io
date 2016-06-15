@@ -1,0 +1,245 @@
+---
+layout:     post
+title:      "C++之面向对象"
+subtitle:   "C++语言的面向对象编程"
+date:       2016-05-21
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - C++
+    - 面向对象
+---
+
+主要介绍一些面试常问到的问题，比较基础的知识，不过有些还是常常容易被忽略。首先介绍一下标准模板库，以及C++中常用的一些容器。对于面向对象，必不可少的当然是类，介绍一下class的成员函数以及它和struct的区别。然后类中的构造函数、析构函数、赋值函数等，最后会提一下多态和友元。
+
+
+### STL和容器
+
+STL为标准模板库，模板是类或函数的宏，又叫做泛型类或者泛型函数。
+
+
+#### 容器
+
+容器（container），可以容纳一些数据的模板类。STL中有vector、set、map和deque等容器。 vector 和 deque 提供对元素的**快速随机访问**，但在任意位置插入或删除元素比在尾部开销大。 list 在任何位置都能**快速插入和删除**，但随机访问开销较大。
+
+下面是关于vector容器的一些操作。
+
+``` c
+vector<int> vec;
+vec.push_back(t);  //在尾部插入一个元素t
+
+vector<int>::iterator p;
+p = vec.begin();   //定义一个迭代器p指向vec的第一个元素
+                   //end为末端的下一个元素
+                   //p为指针，对指向的元素赋值可以通过*p来实现
+                   
+vec.erase(p);    //删除第一个元素
+vec.pop_back();  //删除最后一个元素
+```
+
+举个例子，下面的程序将vec的元素遍历并赋值0。
+
+``` c
+for(vector<int>::iterator p = vec.begin(); p != vec.end(), p++)
+    *p = 0;
+    
+//使用下标来实现
+for(vector<int>::size_type i = 0; i != vec.size(); i++)
+    vec[i] = 0;
+```
+
+
+
+map容器的类型
+
+``` c
+map<k, v>::key_type    //键类型
+map<k, v>::mapped_type //值类型
+map<k, v>::value_type  //这是一个pair类型，first为const常量键类型，second为值类型。
+```
+
+
+下面的代码用来统计输入的每个单词的数量
+
+``` c
+map<string, int> word_count;
+string word;
+while(cin >> word)
+    ++word_count[word];
+```
+
+
+#### 泛型编程
+
+对于标准容器，要想实现对容器的查找、排序等操作，可以标准库中定义的一组**泛型算法**来实现，对于不同的容器都是相同的操作。就像数学里面，好多定理都需要依赖同一套公理一样。整个STL就是泛型编程的一个例子。
+
+
+如下，作为例子编写的一个泛型查找函数
+
+``` c
+template<typename T>
+const T *find1(T *a, int n, T x)
+{
+    const T *p = a;
+    for(int i = 0; i < n; i++)
+    {
+        if(*p == x)
+            return p;
+        p++;
+    }
+    return 0;
+}
+
+//原型
+const int *find1(const int *a, int n, int x)
+{
+    const int *p = a;
+    for(int i = 0; i < n; i++)
+    {
+        if(*p == x)
+            return p;
+        p++;
+    }
+    return 0;
+}
+```
+
+### 成员变量
+
+类中的成员变量可以分为3种，分别为：
+
+- `private` 只能由1、该类的成员函数；2、其友元函数访问。不能被该类的对象也不能访问。
+
+- `protected` 可以被1、该类的成员函数；2、子类的函数；3、其友元函数访问。不能被该类的对象访问。
+
+- `public` 可以被1、该类的成员函数；2、子类的函数；3、其友元函数；4、该类的对象访问。
+
+
+如果需要访问类中的 private 数据，可以在通过类中的共有函数的返回值来调用。
+
+在class中变量默认的是private，struct中变量默认的是public，其他方面，两者区别很小。
+
+### 成员函数
+
+成员函数在类中占很重要的位置，下面将介绍class中最基础的几个成员函数。为了方便起见，以一个模拟的 String 类作为例子，然后在下面列举出详细的成员函数实现。 String 的原型：
+
+``` c
+class String
+{
+    public:
+    String(const char *str = NULL);          //构造函数
+    String(const String &other);             //复制构造函数
+    ~String(void);                          //析构函数
+    String& operate = (const String &other); //赋值函数
+    
+    private:
+    char *m_data;     //用于保存字符串
+};
+``` 
+
+
+#### 构造函数
+
+只要创建类的一个新的对象，就要执行构造函数。构造函数的作用是保证每个对象的数据成员都具有合适的初始值。
+
+
+``` c
+String::String(const char *str)
+{
+    if(str == NULL)
+    {
+        m_data = new char[1];
+        *m_data = '\0';
+    }
+    else
+    {
+        m_data = new char[strlen(str)+1];
+        strcpy(m_data, str);
+    }
+}
+```
+
+然后就可以用下面的语句，创建并初始化一个新的String对象了
+
+``` c
+String str("hello!");
+```
+
+#### 析构函数
+
+在构造函数中分配了资源之后，就需要析构函数来回收或者释放这些资源。撤销类对象时会自动调用析构函数。当然析构函数的作用不仅限于释放资源，只要是需要在该类的对象使用完毕后执行的程序都可以。
+
+
+``` c
+String::~String(void)
+{
+    delete[] m_data;
+    //也可以写成delete m_data
+}
+```
+
+这个析构函数是为了防止内存泄漏的，当一个String对象超出了它的作用域时，会运行这个析构函数。
+
+#### 复制构造函数
+
+复制构造函数是一个特殊的构造函数，只有一个形参，该形参是对该类对象的引用，形参常用const修饰。
+
+
+`注意` 大多数类应定义复制构造函数和默认构造函数，否则会严重局限类的使用。
+
+``` c
+String::String(const String &other)
+{
+    m_data = new char[strlen(other.m_data)+1];
+    strcpy(m_data, other.m_data);
+}
+```
+
+复制构造函数定义好之后，下面的语句就能够起到将 s1 复制给 s2 的作用了
+
+``` c
+String s1("hello");
+String s2 = s1;
+```
+
+#### 赋值运算符函数
+
+合成的赋值运算符函数和合成复制构造函数操作类似，会执行**逐个成员赋值**，不过本例中只有一个成员变量m_data。返回的 this 为指向左操作数的指针，右操作数一般为const引用传递。
+
+``` c
+String& String::operate = (const String &other)
+{
+    if(this == &other)
+        return *this;
+        
+    delete[] m_data;
+    m_data = NULL;
+    
+    m_data = new char[strlen(other.m_data)+1];
+    strcpy(m_data, other.m_data);
+    
+    return *this;  //*this为左操作数的对象的引用
+}
+```
+
+有了赋值运算符函数，就可以实现相应的String类赋值运算，以及字符串传值。如下例子实现字符串的相加：
+
+``` c
+String s1("he");
+String s2("llo");
+String s3;
+s3 = s1 + s2;
+```
+
+C++ Primer 书上说的一个有用的经验法则：如果类需要析构函数，则它也需要复制构造函数和赋值运算符函数。
+
+
+### 其他
+
+
+#### 多态
+
+#### 友元 
+
+友元可以是普通的非成员函数，或者其他类的成员函数，还可以是整个类。一个类的private成员可以被其成员函数和其友元函数所使用。

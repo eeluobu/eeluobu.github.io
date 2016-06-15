@@ -11,8 +11,9 @@ tags:
     - Git
 ---
 
+> Git是一个开源的分布式版本控制系统，可以有效、高速的处理从很小到非常大的项目版本管理。
 
-由于没有现成的服务器让我来搭建Git的服务器，就以目前使用最广泛的GitHub作为例子，来进行使用的介绍。
+由于没有现成的服务器让我来搭建自己的Git服务器，就以目前使用最广泛的 GitHub 作为例子，来进行使用的介绍。
 
 
 ### 创建密钥
@@ -20,7 +21,7 @@ tags:
 为了建立GitHub的远程仓库和本地仓库的联系，需要在本地创建密钥文件，然后复制到GitHub上。
 
 ``` bash
-ssh-keygen -t rsa -C "1932261722@qq.com"
+ssh-keygen -t rsa -C "my@email.com"
 ```
 
 然后提示设置密码，注意和Linux一样，输入的密码在终端里是不会显示的。
@@ -39,7 +40,7 @@ ssh -T git@github.com
 
 ``` bash
 git config --global user.name "luoyi"
-git config --global user.email "1932261722@qq.com"
+git config --global user.email "my@email.com"
 ```
 
 
