@@ -1,0 +1,198 @@
+---
+layout:     post
+title:      "C++之继承和接口"
+subtitle:   "面向对象编程的关键"
+date:       2016-05-21
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - C++
+    - 继承
+---
+
+
+继承是C++中面向对象很重要的一个特性，而C++中没有interface这个关键字，所以不存在所谓的“接口”技术。但是C++却很容易做到这样的模拟，不定义属性的抽象类就是接口
+
+
+### 继承
+
+
+派生类常用的3种继承方式，公有继承（public）、私有继承（private）、保护继承（protected）。
+
+#### 共有继承
+
+公有继承时，派生类的对象可以访问基类中的公有成员，派生类的成员函数可以访问基类的公有成员和保护成员。
+
+
+#### 私有继承
+
+
+私有继承时，基类的成员只能由直接派生类访问，不能再往下继承。
+
+
+#### 保护继承
+
+保护继承时，基类的成员只能由直接派生类访问，不能再往下继承。
+
+
+
+### 虚函数继承和虚继承
+
+虚函数继承和虚继承是完全不同的两个概念，不要将他们混淆。
+
+#### 虚继承
+
+
+例如有这样的继承关系：B和C都继承自A，D继承自B和C。那么就会在D中出现两次A，为了节省内存空间，就可以将B和C定义为虚继承，如下：
+
+
+``` c
+class A;
+class B : public virtual A;
+class C : public virtual A;
+class D : public B, public C;
+```
+
+#### 虚函数继承
+
+
+在虚继承时，子类对父类中虚函数的继承，而如果是直接继承，就不会存在对虚函数的继承
+
+
+``` c
+class A
+{
+    char a[3];
+    public:
+    virtual void aa() {};
+};
+
+class B : public virtual A
+{
+    char b[3];
+    public:
+    virtual void bb() {};
+};
+
+class C : public virtual B
+{
+    char c[3];
+    public:
+    virtual void cc() {};
+};
+
+//考虑内存对齐
+//sizeof(A) = 8
+//sizeof(B) = 16
+//sizeof(C) = 24
+//直接继承的话，分别为8、12、16
+```
+
+
+### 多重继承
+
+
+如果多重继承的父类有同名的函数，子类可以通过如下方法区别
+
+``` c
+class A
+{
+    public: 
+    void f() {};
+};
+class B
+{
+    public: 
+    void f() {};
+};
+class C : public A, public B 
+{
+};
+
+int main()
+{
+    C c;
+    c.A::f();
+    
+    return 0;
+}
+```
+
+
+
+### 纯虚函数
+
+如果一个类中有纯虚函数，那么它是不能实例化一个对象的
+
+``` c
+class shape
+{
+    public:
+    shape() {}
+    ~ shape() {}
+    virtual void draw() = 0;  //纯虚函数
+    //virtual void draw() {}  //虚函数
+};
+```
+
+
+
+### 运算符重载
+
+
+运算符被定义为全局函数时：一元运算符是一个参数，二元运算符是两个参数；如果是成员函数：一元运算符没有参数，二元运算符是一个参数。
+
+
+``` c
+#include<iostream>
+using namespace std;
+
+class A
+{
+    private:
+    int a;
+    
+    public:
+    A() {a = 0;}
+    
+    void operator ++ ()     //一元操作
+    {
+        a += 1;
+    }
+    
+    void operator ++ (int)  //因为成员函数带一个参数，所以是二元操作
+    {
+        a += 2;
+    }
+    
+    friend void print(const A &c);
+};
+
+void print(const A &c)
+    cout << c.a;
+    
+int main()
+{
+    A a;
+    print(a);
+    ++a;  //一元操作
+    
+    print(a);
+    a++;  //二元操作
+    print(a);
+    
+    return 0;
+}
+```
+
+
+
+
+
+
+
+
+
+
+
