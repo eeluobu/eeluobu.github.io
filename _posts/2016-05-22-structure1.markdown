@@ -1,0 +1,358 @@
+---
+layout:     post
+title:      "基础数据结构（一）"
+subtitle:   "链表、队列、栈"
+date:       2016-05-22
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - 数据结构
+---
+
+
+### 链表
+
+链表是一种相对简单的数据结构，所以在面试的时候很容易被涉及到。其实链表的复杂程度不亚于树、图等复杂的数据结构，也可以基于链表构造出一个很难的问题。但个人感觉再复杂肯定是也还是基于链表的一些基本操作的，理解并掌握链表的一些常用操作很重要。
+
+下面介绍3种常用的链表，单链表、双向链表、循环链表。
+
+#### 单链表
+
+
+
+单链表逆序
+
+``` c
+node *reverse(node *head)
+{
+    node *p, *q;
+    
+    if(head == NULL || head->next == NULL)
+    return head;
+    
+    p = head->next;
+    head->next = NULL;
+    
+    while(p! = NULL)
+    {
+        q = p->next;
+        p->next = head->next;
+        head->next = p;
+        p = q;
+    }
+    
+    return head;
+}
+```
+
+单链表的插入，在第i个结点前插入值为num的元素
+
+``` c
+node *add(node *head, int i, int num)
+{
+    node *p, *s;
+    
+    if(i <= 0) return ERROR;
+    
+    int k = 0;
+    p = head;
+    
+    while(p != NULL && k < i-1)  //查找第i-1个结点
+    {
+        p = p->next;
+        k++;
+    }
+    
+    if(!p) return ERROR;
+    
+    s = (node *)malloc(sizeof(node));
+    s->data = num;
+    
+    s->next = p->next;
+    p->next = s;
+    
+    return head;
+}
+```
+
+单链表的删除，删除第i个结点
+
+``` c
+node *del(node *head, int i)
+{
+    node *p, *r;
+    
+    int k = 0;
+    p = head;
+    
+    while(p->next != NULL && k < i-1)  //查找第i-1个结点
+    {
+        p = p->next;
+        k++;
+    }
+    
+    if(!(p->next)) return ERROR;
+    
+    r = p->next;
+    p->next = r->next;
+    
+    free(r);
+    
+    return head;
+}
+```
+
+
+
+#### 双向链表
+
+双向链表的插入，在第i个结点前插入值为num的元素
+
+``` c
+node *add(node *head, int i, int num)
+{
+    node *s, *p;
+    
+    //检查i的位置是否合法
+    //让p指向第i个结点
+    
+    s = (node *)malloc(sizeof(node));
+    s->data = num;
+    
+    s->prior = p->prior;
+    p->prior->next = s;
+    s->next = p;
+    p->prior = s;
+    
+    return head;
+}
+```
+
+双向链表删除第i个结点
+
+``` c
+node *del(node *head, int i)
+{
+    node *p;
+    
+    //检查i的位置是否合法
+    //让p指向第i个结点
+    
+    p->prior->next = p->next;
+    p->next->prior = p->prior;
+    
+    free(p);
+    
+    return head;
+}
+```
+
+    
+
+
+#### 循环链表
+
+
+循环链表是一个首尾相接的链表，将单链表最后一个结点的指针域由NULL改为指向表头结点。关于循环链表的基本操作和单链表的大致相同，但是有些算法题用循环链表或者是这个思路去解决会变得很容易。
+
+
+### 队列
+
+栈只允许在表的一端插入元素，在另一端删除元素，所以具有先进先出（FIFO）的特性。允许删除的一端为`队头`，允许插入的一端为`队尾`。
+
+队列的实现可以有链队列和循环队列，链队列和链栈一样采用链表存储数据，循环队列则和顺序栈一样，用数组存放数据。
+
+以链队列为例，介绍出队、入队操作。链队列的队头指针指向头结点，队尾指针指向最后一个结点。空链队列队头和队尾指针都指向头结点。下面是链队列的定义：
+
+
+``` c
+typedef struct node
+{
+    int data;
+    struct node *next;
+} node;
+
+typedef struct
+{
+    node *front;  //队头指针
+    node *rear;   //队尾指针
+} queue;
+```
+
+
+#### 初始化
+
+将Q初始化一个空的链队列
+
+``` c
+int init(queue *Q)
+{
+    Q->front = (node *)malloc(sizeof(node));
+    
+    if(Q->front == NULL) return FALSE;
+    
+    Q->rear = Q->front;
+    Q->front->next = NULL;  //头结点的指针域为空
+    
+    return TRUE;
+}
+```
+
+
+#### 入队操作
+
+链队列入队操作
+
+``` c
+int insert(node *Q, int x)
+{
+    node *s;
+    s = (node *)malloc(sizeof(node));
+    if(s == NULL) return FALSE;
+    
+    
+    s->data = x;
+    s->next = NULL;
+    
+    Q->rear->next = s;
+    Q->rear = s;
+    
+    return TRUE;
+}   
+```
+
+
+
+#### 出队操作
+
+链队列出队操作。这里有一个地方要注意，因为一个空的链队列也是有一个头结点的，所以删除元素的话，只能是头结点的下一个元素，即队头的第一个元素。不能说去删除头结点，所以下面的指针p指向`Q->front->next`，而不是`Q->front`。我自己最开始还差点搞混淆了。
+
+``` c
+int del(queue *Q)
+{
+    node *p;
+    
+    if(Q->front == Q->rear) return FALSE;
+    
+    p = Q->front->next;
+    Q->front->next = p->next;
+    
+    if(Q->rear == p)         //如果队列中只有一个元素，即删除了队尾元素
+        Q->rear = Q->front;  //将队尾指针前移
+    
+    free(p);
+    return TRUE;
+}
+```
+
+
+
+### 堆和栈
+
+
+这里要介绍的是数据结构中的堆、栈，而不是在程序运行的时候的内存中的堆、栈。这两者之间是不同的概念，不要把他们混淆了。在文章的后面也会顺便说一下内存分配的堆和栈。
+
+#### 栈
+
+
+栈可以称为是后进先出的线性表，简称LIFO表。栈的实现可以有顺序栈和链栈，顺序栈即用数组来存放数据，链栈则是用一个单链表来存储数据。
+
+下面以链栈为例，介绍出栈和进栈操作
+
+``` c
+typedef struct node
+{
+    int data;
+    struct node *next;
+} node;
+```
+
+
+进栈操作
+
+``` c
+node *push(node *top, int x)
+{
+    node *t;
+    t = (node *)malloc(sizeof(node));
+    
+    t->data = x;
+    t->next = top->next;
+    top->next = t;
+    
+    return top;
+}
+```
+
+
+
+出栈操作
+
+``` c
+node *pop(node *top)
+{
+    node *t;
+    
+    t = top->next;
+    if(t == NUll) return ERROR;
+    top->next = t->next;
+    
+    free(t);
+    
+    return top;
+}
+```
+
+
+利用栈的数据结构或者说先进后出的方法，可以很方便的解决一些问题，比如括号匹配问题、表达式求值等。此外还能用栈来实现递归。
+
+#### 堆
+
+
+堆是一种经过排序的树形数据结构，每个结点都有一个值。通常我们所说的堆的数据结构，是指二叉堆。
+
+堆的特点是根结点的值最小（或最大），且根结点的两个子树也是一个堆。由于堆的这个特性，常用来实现优先队列。堆的存取是随意，这是和栈不同的地方，栈的存取必须是按照先进后出的顺序进行的。
+
+关于堆的代码，在后面的二叉树里面再详细介绍。
+
+
+
+### 内存中的堆和栈
+
+上面的是数据结构的堆和栈，在程序里面这些可以是具体的代码。在内存的管理和分配中，也用到了堆、栈，要注意和数据结构相区分。经常需要操作的内存区可以分成下面几个类别：
+
+- 栈区（stack）：存放函数的参数、局部变量等，该内存空间由编译器自动分配、释放以及管理，访问效率高，但不灵活，空间也小。
+
+
+- 堆区（heap）：需要程序员手动申请、释放，如malloc、free以及new、delete等，平常说的内存泄露就是操作堆引起的，由于需要手动管理，所以访问效率较低，但可以根据需要灵活使用。
+
+- 全局区（static）：也是编译器自动管理的，全局变量和静态变量都存放在这里，初始化的全局变量和静态变量在一块区域，未初始化的在另一块区域，与栈中变量的区别是在程序运行期间变量的值一直保存。
+
+- 常量区：常量字符串放在这个位置，程序结束后系统自动释放。
+
+- 程序代码区：存放函数体的二进制代码。
+
+举个代码的例子就比较明白了
+
+``` c
+#include<iostream>
+using namespace std;
+
+int a = 0;  //全局初始化区
+char *p1;   //全局未初始化区
+
+int main()
+{
+    int b;             //栈
+    char *p2;          //栈
+    char s[] = "abc";  //栈
+    char *p3 = "abc";  //p3在栈上，abc常量区
+    static int c = 0;  //全局初始化区
+    
+    p1 = (char *)malloc(10);   //分配的空间在堆上
+    p2 = (char *)malloc(10);   //分配的空间在堆上
+    
+    strcpy(p1, "abc"); //abc在常量区
+}
+```
