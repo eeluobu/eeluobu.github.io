@@ -54,7 +54,7 @@ cp mkimage /bin
 
 #### Kconfig文件
 
-在编译内核之前了解一下Kconfig文件，配置好后保存到.config中，Makefile编译时调用。
+在编译内核之前了解一下Kconfig文件，配置好后保存到`.config`中，Makefile编译时调用。
 
 其中一个config的大体结构为
 
@@ -104,7 +104,7 @@ make uImage ARCH=arm CROSS_COMPILE=arm-linux-
 > "mkimage" command **not found** - U-Boot images will not be built
 > Image arch/arm/boot/uImage is ready
 
-然后执行
+这时需要将 `mkimage` 命令添加进bin目录
 
 ``` bash
 cp mkimage /bin
@@ -134,7 +134,7 @@ make modules_install ARCH=arm INSTALL_MOD_PATH=/nfsroot
 ```
 
 #### 安装busybox
-在busybox目录下，配置busybox，然后编译、安装。
+在busybox目录下，配置busybox，包括安装命令的路径等。然后编译、安装。
 
 ``` bash
 make menuconfig
@@ -151,7 +151,23 @@ ls /nfsroot/bin
 
 
 ### 开发板下载
-将编译好的uboot文件，zImage内核，cramfs根文件系统下载到开发板中。由于cramfs文件只读，需要使用的yaffs文件可以直接下载，也可以通过nfs挂载，开发时更便捷。
+
+将编译好的1、uboot文件 2、zImage内核 3、cramfs根文件系统 下载到开发板中。通过 tftp 的方式来下载，关于 tftp 的配置，文章的最后有具体的介绍。
+
+`ps：`cramfs文件为只读，yaffs文件可读写，开发时通过nfs挂载，更加便捷。
+
+
+因为开发板上现在没有操作系统，不能使用Linux的命令，我们先来看一下一些uboot的常用命令。
+
+``` bash
+setenv 变量 值   #设置变量的值
+setenv 变量      #删除变量
+saveenv          #保存配置，也可以为save
+printenv         #打印配置，也可以为pri
+setenv bootcmd 命令    #设置启动后自动运行的命令
+setenv bootargs 参数   #设置内核启动参数
+```
+
 
 #### 开发板配置
 设置开发板和电脑主机的ip
@@ -161,12 +177,12 @@ setenv serverip 192.168.0.1
 setenv ipaddr 192.168.0.2
 ```
 
-然后设置nfs启动，如果在编译内核是配置过，就不需要在这里设置了。
+如果文件系统为nfs启动，则如下设置nfs启动，另外如果在编译内核是配置过，就不需要在这里设置了。
 
 ``` bash
 setenv bootargs"root=/dev/nfs nfsroot=192.168.0.1:/nfsroot ip=192.168.0.2 console=ttySAC0,115200"
 ```
-`
+
 最后记得保存
 
 ``` bash
@@ -174,6 +190,9 @@ saveenv
 ```
 
 #### 下载内核
+
+
+
 首先下载uboot文件
 
 ``` bash
@@ -206,24 +225,64 @@ nand write c0008000 300000 f00000
 tar jxvf /tmp/yaffs.tar.bz2 -C /mnt/yaffs/
 ```
 
-如果是在开发阶段，不需要像上面那样把整个文件系统拷贝到开发板上，把需要运行的程序放在主机上的nfs共享文件夹中，下面的例子直接用的是主机上的编译好文件系统的目录`/nfsroot`，然后开发板上运行挂载命令，在开发板的`/mnt/nfs`目录中就能看到应用程序。
+如果是在开发阶段，不需要像上面那样把整个文件系统拷贝到开发板上，把需要运行的程序放在主机上的nfs共享文件夹中。假如需要在开发板上运行的程序工程在电脑上Linux的目录`/nfsroot`中，xshell上只需要运行挂载命令，在开发板的`/mnt/nfs`目录中就能看到应用程序。
 
 ``` bash
 mount -t nfs 192.168.0.1:/nfsroot /mnt/nfs
 ```
 
 ### 其他配置
-还有两个很重要的配置，`nfs`可以理解为用来实现开发板和电脑共享文件，`samba`则为实现电脑上windows和linux之间的共享。
+
+还有三个很重要的配置，`tftp`为最开始的裸机提供uboot、内核镜像和文件系统的下载，`nfs`可以理解为用来实现开发板和电脑共享文件，`samba`则为实现电脑上windows和linux之间的共享。
+
+
+
+#### tftp配置
+
+首先安装客户端和服务器，在线安装即可
+
+``` bash
+apt-get install tftp-hpa tftpd-hpa
+```
+
+配置tftp服务的目录，需要编辑 tftpd-hpa 文件
+
+``` bash
+vim /etc/default/tftpd-hpa
+```
+
+内容如下，其中第二行即为 tftp 目录，修改成想要设定的即可。创建的这个目录权限一般为777。
+
+``` bash
+TFTP_USERNAME="tftp"
+TFTP_DIRECTORY="/tftp"
+TFTP_ADDRESS="0.0.0.0:69"
+TFTP_OPTIONS="-c  -s  -l"
+```
+
+最后重启服务
+
+``` bash
+service tftpd-hpa restart
+```
+
+然后将需要通过 tftp 下载到开发板上的文件放入上面的 /tftp 目录中就可以了。
 
 #### nfs挂载文件系统
 
-修改`/etc/exports`文件
+首先如果没有安装nfs服务器程序和客户端程序，则需要安装它们。安装时若提示`/etc/exports.d`目录不存在，手动创建目录即可。
+
+``` bash
+apt-get install nfs-kernel-server nfs-common
+```
+
+修改`/etc/exports`文件，设置共享目录，一般这个目录的权限设置为777。设置访问范围，即能访问nfs服务器的网段。参数 `sync` 表示修改会同步到服务器端。
 
 ``` bash
 /nfsroot 192.168.0.*(rw,sync,no_root_squash)
 ```
 
-重启nfs即可
+重启nfs服务，如果不是像下面一样直接nfs启动，而仅仅是在启动后挂载文件，那么只需要在开发板上运行挂载命令即可。
 
 ``` bash
 /etc/init.d/nfs-kernel-server restart 
@@ -236,12 +295,35 @@ tftp 31000000 uImage
 bootm 31000000
 ```
 
-其中`uImage`是前面编译的能直接通过nfs启动文件系统的内核，第二条命令重启之后开发板自动挂载nfs文件系统。
+其中`uImage`是前面编译的能直接通过 nfs 启动文件系统的内核，然后重启之后自动运行能挂载nfs文件系统的镜像。
 
 #### samba服务器
 
-直接编辑`smb.conf`这个文件即可，加入一些配置参数，在Ubuntu中还需要在共享的文件夹右键，然后设置共享。
+如果没有安装 samba 服务，则安装它们
+
+``` bash
+apt-get install samba
+```
+
+
+直接编辑 /etc/samba/ 目录下的`smb.conf`这个文件即可，加入一些配置参数，如共享路径，共享目录用户等。
 
 ``` bash
 vim /etc/samba/smb.conf
 ```
+
+然后重启 samba 服务
+
+``` bash
+service smbd restart
+```
+
+最后设置用户名和密码即可
+
+``` bash
+smbpasswd -a 用户名
+```
+
+我发现一个简单的方法，在Ubuntu中在需要共享的文件夹右键，然后设置共享，在windows下输入 `\\linux的ip` 就能直接访问了，不需要输入用户名和密码了。
+
+当然和 windows 共享文件的话，除了上面的方法，使用 VMware 自带的共享设置也很方便。
