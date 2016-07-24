@@ -29,7 +29,7 @@ tar -zxvf arm-linux-gcc.tar.gz -C /
 
 如果只是添加到当前用户环境，就在这个文件`/~/.bashrc`中添加，`~`表示工作目录，普通用户为`/home`，root用户为`/root`；
 
-如果要添加到全局环境，需要在`/etc/profile`中添加。
+如果要添加到全局环境（对所有用户生效），需要在`/etc/profile`中添加，要立即生效还需要运行 source /etc/profile 命令，否则只能在下次重新进入此用户时生效。
 
 ``` bash
 export PATH=$PATH:/usr/local/arm/4.3.2/bin
@@ -45,7 +45,7 @@ export PATH=/usr/local/arm/4.3.2/bin:$PATH
 
 ``` bash
 make clean
-make 6410_config
+make 6410_config   #运行6410配置
 make CROSS_COMPILE=arm-linux 
 cp mkimage /bin
 ```
@@ -157,7 +157,7 @@ ls /nfsroot/bin
 `ps：`cramfs文件为只读，yaffs文件可读写，开发时通过nfs挂载，更加便捷。
 
 
-因为开发板上现在没有操作系统，不能使用Linux的命令，我们先来看一下一些uboot的常用命令。
+因为开发板上现在没有操作系统，不能使用Linux的命令，我们先来看一下一些 uboot 的常用命令。
 
 ``` bash
 setenv 变量 值   #设置变量的值
@@ -166,6 +166,16 @@ saveenv          #保存配置，也可以为save
 printenv         #打印配置，也可以为pri
 setenv bootcmd 命令    #设置启动后自动运行的命令
 setenv bootargs 参数   #设置内核启动参数
+
+#emmc指令
+movi init          #初始化emmc
+movi read/write uboot/kernel addr  #读/写镜像到内存地址addr中
+movi read/write rootfs addr size   #读/写size大小的文件系统到内存地址addr中
+
+#运行指令
+go addr    #执行内存中addr处的指令
+run var    #运行变量var制定指令
+bootm kerneladdr rootfsaddr devicetreeaddr #运行kernel从地址处开始
 ```
 
 

@@ -37,7 +37,76 @@ typedef struct node
 
 #### 二叉树遍历
 
+遍历算法很有用，比如输出二叉树的结点、叶子结点，统计结点、叶子结点的数目等。
 
+先序遍历
+
+
+``` c
+void Pre(tree root)
+{
+    if(root != NULL)
+    {
+        Visit(root->data);  //访问根结点函数
+        Pre(root->lchild);
+        Pre(root->rchild);
+    }
+}
+```
+
+中序遍历
+
+``` c
+void In(tree root)
+{
+    if(root != NULL)
+    {
+        In(root->lchild);
+        Visit(root->data);
+        In(root->rchild);
+    }
+}
+```
+
+
+后序遍历
+
+``` c
+void Post(tree root)
+{
+    if(root != NULL)
+    {
+        Post(root->lchild);
+        Post(root->rchild);
+        Visit(root->data);
+    }
+}
+```
+
+
+中序遍历二叉树的非递归算法
+
+``` c
+void In(tree root)
+{
+    InitStack(&S);  //初始化栈一个空栈S
+    p = root;
+    while(p != NULL || !Empty(S))
+    {
+        if(p != NULL)
+        {
+            Push(&S, p);
+            p = p->lchild;
+        }
+        else
+        {
+            Pop(&S, &p);
+            Visit(p->data);
+            p = p->rchild;
+        }
+    }
+}
+```
 
 ### 二叉树相关排序
 
@@ -59,11 +128,29 @@ typedef struct node
 ### 图
 
 
+图算是比较复杂的数据结构了，面试的时候一般在编程大题里面才会出现，下面介绍一些基本操作。
+
+
+
 
 #### 存储结构
 
 
+邻接矩阵
+
+
+邻接表
+
+
+
 #### 图的遍历
+
+
+深度优先搜索
+
+
+广度优先搜索
+
 
 
 #### 应用
