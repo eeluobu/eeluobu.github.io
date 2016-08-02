@@ -136,11 +136,9 @@ git push origin master
 下面是摘要的一些关于它们的介绍：
 
 > _config.yml:
-Stores configuration data. Many of these options can be specified from the command line executable but it’s easier to specify them here so you don’t have to remember them.
-
+Stores configuration data. Many of these options can be specified from the command line executable but it’s easier to specify them here so you don’t have to remember them.  
 > _includes:
-These are the partials that can be mixed and matched by your layouts and posts to facilitate reuse. 
-
+These are the partials that can be mixed and matched by your layouts and posts to facilitate reuse.  
 > _layouts:
 These are the templates that wrap posts. Layouts are chosen on a post-by-post basis in the YAML Front Matter, which is described in the next section. 
 
