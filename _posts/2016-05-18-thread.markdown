@@ -60,7 +60,7 @@ int pthread_cancel(pthread_t th)
 
 #### 挂起等待
 
-**pthread_join()**函数可以将当前线程挂起，等待其他线程的结束。
+**pthread_join()**函数可以将当前线程挂起，等待其他线程的结束并获得其返回值。
 
 ``` c
 int pthread_join(pthread_t th, void **thread_return)
@@ -73,6 +73,27 @@ int pthread_join(pthread_t th, void **thread_return)
 返回值：成功返回0，出错返回错误代码。
 
 
+#### 线程分离
+
+
+**pthread_detach()**函数用来分离一个线程，线程在终止时自动清理并移除。
+
+``` c
+int pthread_detach(pthread_t th)
+```
+
+`th：` 分离的线程标识符。
+
+下面的程序线程自行分离：  
+
+``` c
+pthread_detach(pthread_self()); 
+```
+ 
+线程处于分离状态时，就不能使用 pthread_join() 来获取其状态了。
+
+
+
 ### 线程间同步和互斥
 
 线程是进程内独立的一条运行路线，处理器调度的最小单元。一个进程可以有多个线程，共享进程的资源和地址空间。所以任何线程对系统资源的操作都会影响其他线程，多线程的同步就变得很重要了。
@@ -83,6 +104,14 @@ POSIX中两种线程同步机制，分别为互斥锁和信号量。互斥锁更
 
 ##### 初始化
 
+
+静态分配互斥量：  
+
+``` c
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+```
+
+动态分配互斥量：  
 pthread_mutex_init()函数用来初始化互斥锁
 
 ``` c
