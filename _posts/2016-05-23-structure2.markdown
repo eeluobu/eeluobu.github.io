@@ -156,3 +156,124 @@ void In(tree root)
 #### 应用
 
 
+Dijkstra算法：
+
+
+dijkstra算法为单源最短路径算法，计算了从源点到其他所有结点的最短路径。要求图中不存在负权边。
+
+寻找源结点v0到每一个结点的最短路径：
+
+(1) 初始化，S = {v0}，所有不在S中的结点v，求出D(v)，即结点v0到v的距离l(v0,v)，不存在的用∞表示。  
+(2) 找到一个不在S中的w，D(w)最小，把w加入到S中。剩下的不在S中的结点v，用min(D(v), D(w)+l(w,v))替换D(v)。  
+(3) 重复步骤(2)，直到所有的网络结点都在S中。这时结点v0到图中每一个结点的最短路径都存在了D(v)中。
+
+
+
+
+
+
+``` c
+int dis[MA];
+int pre[MA];
+
+int a[MA][MA];
+
+
+//v0为要计算的第一个结点
+void Dijkstra(int v0)
+{
+    int n = MA;
+    bool S[MA];     //判断是否已存入S集合中
+    for(int i = 1; i <= n; i++)
+    {
+        dis[i] = a[v0][i];
+        S[i] = false;
+        if(dis[i] == MA)
+            pre[i] = -1;
+        else
+            pre[i] = v0;
+    }
+    dis[v0] = 0;
+    S[v0] = true;
+    
+    for(int i = 2; i <= n; i++)
+    {
+        int min = MA;
+        int u = v0;
+        for(int j = 1; j <= n; j++)
+        {
+            if((!S[j]) && dis[j] < min)
+            {
+                u = j;
+                min = dis[j];
+            }
+        }
+        
+        S[u] = true;
+        
+        for(int j = 1; j <= n; j++)
+        {
+            if((!S[j]) && a[u][j] < MA)
+            {
+                if(dis[u] + a[u][j] < dis[j])
+                {
+                    dis[j] = dis[u] + a[u][j];
+                    pre[j] = u;
+                }
+            }
+        }
+    }
+}
+        
+```
+
+
+
+
+
+Floyd算法：
+
+Floyd-Warshall算法求任意两点间的最短路径，可以处理有向图或者负权的最短路径。
+时间复杂度O(N<sup>3</sup>)，空间复杂度O(N<sup>2</sup>)
+
+
+求a、b两点的最短距离：
+
+假设是a、b两点之间有k结点，ab的距离D(ab)，开始遍历节点k，当D(ak)+D(kb)<D(ab)时，更新D(ab)=D(ak)+D(kb)，
+当遍历完k时，D(ab)就是a、b两点的最短距离。
+
+
+
+
+``` c
+//图的邻接矩阵
+int edges[][];
+
+void Floyd(int edges[][])
+{
+    int a[MA][MA];
+    int path[MA][MA];
+    int i,j,k;
+    int n = MA;
+    
+    for(i = 0; i < n; i++)
+        for(j = 0; j < n; j++)
+        {
+            a[i][j] = edges[i][j];
+            path[i][j] = -1;
+        }
+        
+    for(k = 0; k < n; k++)
+        for(i = 0; i < n; i++)
+            for(j = 0; j < n; j++)
+                if(a[i][j] > (a[i][k] + a[k][j]))
+                {
+                    a[i][j] = a[i][k] + a[k][j];
+                    path[i][j] = k;
+                }
+}
+```
+
+
+
+
