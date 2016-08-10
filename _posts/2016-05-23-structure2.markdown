@@ -173,8 +173,8 @@ dijkstra算法为单源最短路径算法，计算了从源点到其他所有结
 
 
 ``` c
-int dis[MA];
-int pre[MA];
+int dis[MA];  //每个结点v距离v0的距离
+int pre[MA];  //
 
 int a[MA][MA];
 
@@ -182,25 +182,26 @@ int a[MA][MA];
 //v0为要计算的第一个结点
 void Dijkstra(int v0)
 {
-    int n = MA;
-    bool S[MA];     //判断是否已存入S集合中
-    for(int i = 1; i <= n; i++)
+    int n = MA;     //结点总数
+    bool S[MA];     //记录是否已存入S集合中
+    
+    for(int i = 0; i < n; i++)
     {
         dis[i] = a[v0][i];
         S[i] = false;
-        if(dis[i] == MA)
+        if(dis[i] == MAXINT)
             pre[i] = -1;
         else
             pre[i] = v0;
     }
-    dis[v0] = 0;
+    //dis[v0] = 0;
     S[v0] = true;
     
-    for(int i = 2; i <= n; i++)
+    for(int i = 0; i < n; i++)
     {
-        int min = MA;
+        int min = MAXINT;
         int u = v0;
-        for(int j = 1; j <= n; j++)
+        for(int j = 0; j < n; j++)   //不在S中的而且距离v0最小的结点u
         {
             if((!S[j]) && dis[j] < min)
             {
@@ -209,11 +210,18 @@ void Dijkstra(int v0)
             }
         }
         
-        S[u] = true;
+        S[u] = true;             //找到后将u放入S中
         
-        for(int j = 1; j <= n; j++)
+        for(int j = 0; j < n; j++)    //剩下的不在S中的结点v，更新dis[v] = min(dis[u]+dis[u][v], dis[v])
         {
-            if((!S[j]) && a[u][j] < MA)
+            /*
+            if((!S[j]) && dis[u] + a[u][j] < dis[j])  //防止a[u][j]溢出，要加一个判断
+            {
+                dis[j] = dis[u] + a[u][j];
+                pre[j] = u;
+            }
+            */
+            if((!S[j]) && a[u][j] < MAXINT)
             {
                 if(dis[u] + a[u][j] < dis[j])
                 {
@@ -221,6 +229,7 @@ void Dijkstra(int v0)
                     pre[j] = u;
                 }
             }
+            
         }
     }
 }
