@@ -440,11 +440,9 @@ msgctl()函数用来控制消息队列，可以设定消息队列、从内核中
 int msgctl(int msqid, int cmd, struct msqid_ds *buf)
 ```
 
-msqid：消息队列ID。
-
-`cmd：` IPC_STAT：读取消息队列的数据结构msqid_ds，将其存储在buf指定的地址中；IPC_SET：设置msqid_ds中的ipc_perm域值（操作权限描述结构），值取自buf参数；IPC_RMID：删除消息队列；
-
-`*buf：` 描述msqid_ds结构的变量。
-
-
+`msqid：` 消息队列ID。  
+`cmd：` IPC_STAT：读取消息队列的数据结构msqid_ds，将其存储在buf指定的地址中；IPC_SET：设置msqid_ds中的ipc_perm域值（操作权限描述结构），值取自buf参数；IPC_RMID：删除消息队列；  
+`*buf：` 描述msqid_ds结构的变量。  
 返回值：成功0，出错-1。
+
+除了上述的几种进程方式外，不同进程间还能通过socket套接字的方式进行通信，这将会在其他部分中介绍到。

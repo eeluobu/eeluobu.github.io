@@ -327,7 +327,7 @@ node *pop(node *top)
 
 - 堆区（heap）：需要程序员手动申请、释放，如malloc、free以及new、delete等，平常说的内存泄露就是操作堆引起的，由于需要手动管理，所以访问效率较低，但可以根据需要灵活使用。
 
-- 全局区（static）：也是编译器自动管理的，全局变量和静态变量都存放在这里，初始化的全局变量和静态变量在一块区域，未初始化的在另一块区域（BSS段），与栈中变量的区别是在程序运行期间变量的值一直保存。
+- 全局区（static）：也是编译器自动管理的，全局变量和静态变量都存放在这里，初始化的全局变量和静态变量在一块区域（data），未初始化的在另一块区域（bss段），与栈中变量的区别是在程序运行期间变量的值一直保存。
 
 - 常量区：常量字符串放在这个位置，程序结束后系统自动释放。
 
@@ -339,20 +339,20 @@ node *pop(node *top)
 #include<iostream>
 using namespace std;
 
-int a = 0;  //全局初始化区
-char *p1;   //全局未初始化区
+int a = 0;  //全局初始化区data
+char *p1;   //全局未初始化区bss
 
 int main()
 {
-    int b;             //栈
-    char *p2;          //栈
-    char s[] = "abc";  //栈
-    char *p3 = "abc";  //p3在栈上，abc常量区
-    static int c = 0;  //全局初始化区
+    int b;             //栈stack
+    char *p2;          //栈stack
+    char s[] = "abc";  //栈stack
+    char *p3 = "abc";  //p3在栈上stack，abc常量区const
+    static int c = 0;  //全局初始化区data
     
-    p1 = (char *)malloc(10);   //分配的空间在堆上
-    p2 = (char *)malloc(10);   //分配的空间在堆上
+    p1 = (char *)malloc(10);   //分配的空间在堆上heap
+    p2 = (char *)malloc(10);   //分配的空间在堆上heap
     
-    strcpy(p1, "abc"); //abc在常量区
+    strcpy(p1, "abc"); //abc在常量区const
 }
 ```
