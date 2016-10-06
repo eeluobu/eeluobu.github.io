@@ -80,21 +80,24 @@ int pthread_join(pthread_t th, void **thread_return)
 #### 线程分离
 
 
-**pthread_detach()**函数用来分离一个线程，线程在终止时自动清理并移除。
+**pthread_detach()**函数用来分离一个线程，当这个线程在终止时，将自动清理回收线程的资源。这样做的好处是，不用主线程自己再调用 pthread_join(threadid, NULL) 获取退出状态，然后回收线程的资源。
 
 ``` c
 int pthread_detach(pthread_t th)
 ```
 
-`th：` 分离的线程标识符。
-
-下面的程序线程自行分离：  
+`th：` 分离的线程标识符。  
+分离一个线程可以有两种方法，一种是主线程创建完一个线程后，在主线程中分离子线程；另一种是可以直接在子线程中分离自己。  
 
 ``` c
+//在主线程中分离子线程
+pthread_detach(threadid);
+
+//子线程自行分离
 pthread_detach(pthread_self()); 
 ```
  
-线程处于分离状态时，就不能使用 pthread_join() 来获取其状态了。
+当一个线程处于分离状态时，就不能使用 pthread_join() 来获取其状态了。
 
 
 
