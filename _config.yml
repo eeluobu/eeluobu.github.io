@@ -1,6 +1,6 @@
 # Site settings
 title: Record the Accumulation
-SEOTitle: eeluobu | 罗一俊的博客
+SEOTitle: BLOG OF RIC.LUO
 header-img: img/home.jpg
 email: eeluobu@gmail.com
 description: ""
@@ -13,8 +13,8 @@ baseurl: ""         # for example, '/blog' if your blog hosted on 'host/blog'
 
 # SNS settings
 RSS: false
-weibo_username:    eeluobu
-zhihu_username:     eeluobu
+#weibo_username:    eeluobu
+#zhihu_username:     eeluobu
 github_username:    eeluobu
 #twitter_username:  
 facebook_username:  eeluobu
@@ -69,7 +69,7 @@ ga_track_id: false            # Format: UA-xxxxxx-xx
 
 # Sidebar settings
 sidebar: true                           # whether or not using Sidebar.
-sidebar-about-description: "厚积薄发"
+sidebar-about-description: "Accumulate Steadily"
 #sidebar-avatar:    # use absolute URL, seeing it's used in both `/` and `/about/`
 
 
@@ -82,10 +82,6 @@ featured-condition-size: 1              # A tag will be featured if the size of 
 
 # Friends
 friends: [
-    {
-        title: "启明星工作室",
-        href: "https://www.ctguqmx.com/"
-    },
     {
         title: "EELUOBU",
         href: "http://www.eeluobu.com/"

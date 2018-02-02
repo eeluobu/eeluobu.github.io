@@ -1,0 +1,259 @@
+---
+layout:     post
+title:      "快速傅里叶变换实现"
+subtitle:   "基2时间抽取FFT算法"
+date:       2016-05-14
+author:     "luobu"
+header-img: "img/post.jpg"
+catalog:    true
+tags:
+    - 算法
+    - fft
+---
+
+
+傅里叶分析将信号从原始域（通常是时间或空间）转换到频域的表示或者逆过来转换。
+
+有限长序列可以通过离散傅里叶变换（DFT）将其频域也离散化成有限长序列。但其计算量太大，很难实时地处理问题，因此引出了快速傅里叶变换(FFT)。
+
+
+### FFT算法
+
+> 快速傅里叶变换（fast Fourier transform），即利用计算机计算离散傅里叶变换（DFT）的高效、快速计算方法的统称，简称FFT。快速傅里叶变换是1965年由J.W.库利和T.W.图基提出的。采用这种算法能使计算机计算离散傅里叶变换所需要的乘法次数大为减少，特别是被变换的抽样点数N越多，FFT算法计算量的节省就越显著。
+
+计算离散傅里叶变换（DFT）的快速方法，有按`时间`抽取的FFT算法和按`频率`抽取的FFT算法。下面的算法实现的是基2时间抽取算法。
+
+#### 计算公式
+
+以8个点的为例，最后一级的计算公式如下
+
+![img](/img/post/fft1.png)
+
+#### 分级计算
+
+同样是8个点的例子，级数为log₂N，即一共有3级。
+
+![img](/img/post/fft.png)
+
+
+
+### 具体实现
+
+由于要用计算机进行处理和计算，因此在编写程序时，不仅要要求结果正确，还要注意对算法的优化，以节省计算时间和空间。
+
+#### 排序
+
+在第一级之前，实现对输入的奇偶排序，并存入 Xr[i] 和 Xi[i] 中。
+
+
+``` c
+for (int i = 0; i <= n-1; i++)
+{
+    int m = i;
+    int i0 = 0;
+    for(int t = 0; t <= k-1; t++)
+    {
+        int j = m/2;
+        i0 = 2*i0 + (m-2*j);
+        m = j;
+    }
+    Xr[i] = xr[i0];
+    Xi[i] = xi[i0];
+}
+```
+
+
+#### 计算旋转因子
+
+计算旋转因子W，从Wº到Wn，按顺序存入 xr[i] 和 xi[i] 中，后面将会用到。
+
+下面的算法效率还是很高的，只用计算`1次`sin()和1次cos()就好了。如果直接用 W 在复平面内的定义式去计算，要计算`N次`sin()和N次cos()，效率非常低。
+
+
+``` c
+xr[0] = 1.0; 
+xi[0] = 0.0;
+p = 6.283185306/(1.0*n);
+xr[1] = cos(p); 
+xi[1] = -sin(p);
+
+
+for (int i=2; i<=n-1; i++)
+{
+    p = xr[i-1] * xr[1];
+    q = xi[i-1] * xi[1];
+    s = (xr[i-1]+xi[i-1]) * (xr[1]+xi[1]);
+    xr[i] = p-q;
+    xi[i] = s-p-q;
+}
+```
+
+
+
+#### 蝶形运算
+
+**第一级蝶形运算**
+
+
+下面是第一级蝶形变换，相邻的两个输入进行蝶形运算，结果存入 Xr[i] 和 Xi[i] 中。因为第一级的Wº都是1，所以不用和其他W进行运算，就直接单独计算了。
+
+``` c
+for (int i = 0; i <= n-2; i = i+2)
+{ 
+    double vr = Xr[i];
+    double vi = Xi[i];
+    Xr[i] = vr+Xr[i+1];
+    Xi[i] = vi+Xi[i+1];
+    Xr[i+1] = vr-Xr[i+1];
+    Xi[i+1] = vi-Xi[i+1];
+}
+```
+
+**次级蝶形运算**
+
+下面的是在第一级运算之后，从第二级到第 log₂(N) 级的运算，最终的结果存在 Xr[i] 和 Xi[i] 中。
+
+
+``` c
+int m = n/2; 
+int nv = 2;
+
+for (int a = 0; a < k-1; a++)      //a控制级数：(log₂N)-1
+{
+    m = m/2;
+    nv = 2*nv;
+    
+    for(int i=0; i<=(m-1)*nv; i=i+nv)  //i控制分部数量：m个
+    {
+        for (int j=0; j<=(nv/2)-1; j++)  //计算每个部（顺序递增nv）的实部和虚部
+        {                                //其中每个部的元素个数为nv/2个 
+            p = xr[m*j] * Xr[i+j+nv/2];
+            q = xi[m*j] * Xi[i+j+nv/2];
+            s = (xr[m*j]+xi[m*j]) * (Xr[i+j+nv/2]+Xi[i+j+nv/2]);
+            double vr = p-q;         //上一级中：此部下半边（i+j+nv/2）*（相应W）后得到的实部 
+            double vi = s-p-q;       //计算得到的虚部
+            Xr[i+j+nv/2] = Xr[i+j] - vr;
+            Xi[i+j+nv/2] = Xi[i+j] - vi;
+            Xr[i+j] = Xr[i+j] + vr;
+            Xi[i+j] = Xi[i+j] + vi;
+        }
+    }
+
+}
+```
+第一个 for 用来控制当前的`级数`，因为第一级已经计算过了，所以为（log₂N）-1 个；
+
+第二个 for 用来控制当前级需要计算的每一个`分部`，分部数量为 m 个，分部序号以 nv 递增；
+
+第三个 for 计算每一个分部在`当前级`的值，即当前级的 Xr 和 Xi 。需要利用的参数有：上一级的 Xr 和 Xi ；对应的旋转因子W（前面已经计算好存储在 xr 和 xi 中）。
+
+在上面的程序中，也是优化了的，如果用复数的乘法直接运算，需要进行`4次`乘法。如（a+bj）和（c+dj）相乘，需要计算 ac - bd 和 ad + bc 的值。而变换后尽管加法多了，但乘法减少到了`3次`，当N很大时，这样的优化还是能节省不少时间的。
+
+
+### 测试程序
+
+下面是一个测试程序，N取8，即8个点的FFT变换。
+
+``` c
+#include <math.h>
+#include <stdio.h>
+
+#define N 8
+
+void fft(double xr[], double xi[], int n, int k, double Xr[], double Xi[]);
+
+int main()
+{
+    double xr[N],xi[N],Xr[N],Xi[N];
+    int n=N,k=3,l=0;       //k=log₂N
+    for(int i=0;i<N;i++)
+    {
+        xr[i] = i;
+        xi[i] = 0;
+        printf("%d %8.5lf %8.5lf\n",i,xr[i],xi[i]);
+    }
+    
+    printf("--------FFT--------\n");
+    fft(xr,xi,n,k,Xr,Xi);
+    
+    for(int i = 0; i < N; i++)
+        printf("%8.5lf+(%8.5lf)*j\n",Xr[i],Xi[i]);
+        
+    getchar();
+}
+
+
+void fft(double xr[], double xi[], int n, int k, double Xr[], double Xi[])
+{
+    double p,q,s;
+    
+    // 排序
+    for (int i = 0; i <= n-1; i++)
+    {
+        int m = i;
+        int i0 = 0;
+        for(int t = 0; t <= k-1; t++)
+        {
+            int j = m/2;
+            i0 = 2*i0 + (m-2*j);
+            m = j;
+        }
+        Xr[i] = xr[i0];
+        Xi[i] = xi[i0];
+    }
+    
+    //计算旋转因子
+    xr[0] = 1.0; 
+    xi[0] = 0.0;
+    p = 6.283185306/(1.0*n);
+    xr[1] = cos(p); 
+    xi[1] = -sin(p);
+    
+    for (int i=2; i<=n-1; i++)
+    {
+        p = xr[i-1]*xr[1];
+        q = xi[i-1]*xi[1];
+        s = (xr[i-1]+xi[i-1])*(xr[1]+xi[1]);
+        xr[i] = p-q;
+        xi[i] = s-p-q;
+    }
+    
+    //第一级
+    for (int i = 0; i <= n-2; i = i+2)
+    {
+        double vr = Xr[i];
+        double vi = Xi[i];
+        Xr[i] = vr+Xr[i+1];
+        Xi[i] = vi+Xi[i+1];
+        Xr[i+1] = vr-Xr[i+1];
+        Xi[i+1] = vi-Xi[i+1];
+    }
+    
+    int m = n >> 1; 
+    int nv = 2;
+    
+    for (int a = 0; a < k-1; a++)      //控制级数：(log₂N)-1
+    {
+        m = m >> 1;     //m/2
+        nv = nv << 1;  //nv*2
+        
+        for(int i=0; i<=(m-1)*nv; i=i+nv)  //控制分部数量：m个
+        for (int j=0; j<=(nv/2)-1; j++)  //计算每个部（顺序递增nv）的实部和虚部
+        {
+            p = xr[m*j] * Xr[i+j+nv/2];
+            q = xi[m*j] * Xi[i+j+nv/2];
+            s = (xr[m*j]+xi[m*j]) * (Xr[i+j+nv/2]+Xi[i+j+nv/2]);
+            double vr = p-q;         //下半部（i+j+nv/2）*W后的实部 
+            double vi = s-p-q;       //下半部（i+j+nv/2）*W后的虚部 
+            Xr[i+j+nv/2] = Xr[i+j] - vr;
+            Xi[i+j+nv/2] = Xi[i+j] - vi;
+            Xr[i+j] = Xr[i+j] + vr;
+            Xi[i+j] = Xi[i+j] + vi;
+        }
+    }
+    
+    return;
+}
+
+    
+```
